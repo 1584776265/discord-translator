@@ -2,6 +2,11 @@
 
 把 Discord 里的英文、日文、韩文、俄文等消息自动翻译成中文，译文以带「译」标记的小字显示在原文下方。原文完整保留，随时对照。
 
+> **直接下载** ｜ [最新版本](https://github.com/1584776265/discord-translator/releases/latest) · exe 5 MB，安装包 2 MB
+> 不需要 Node.js、Python 或任何运行时，Win10 1803+ 开箱可用
+
+![桌面应用](docs/desktop-app.png)
+
 四种形态共用同一套翻译引擎与 DOM 适配逻辑：
 
 | 形态 | 适用场景 | 前置条件 |
