@@ -1,0 +1,166 @@
+/* ==========================================================
+   Discord 自动翻译 — 注入样式
+   与 Discord 的深浅色主题保持一致
+   ========================================================== */
+
+.dt-trans {
+  /* Discord 的消息容器可能是 grid（头像占一列），也可能是 block。
+     grid-column 让译文在 grid 布局下落在正文那一列并横跨整行；
+     block 布局下这条规则不产生任何影响。 */
+  grid-column: 2 / -1;
+
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  margin-top: 2px;
+  padding: 1px 0 1px 8px;
+  border-left: 2px solid rgba(88, 101, 242, 0.55);
+  font-size: var(--dt-font-size, 13px);
+  line-height: 1.4;
+  color: var(--text-normal, #dbdee1);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  user-select: text;
+  animation: dt-fade-in 160ms ease-out;
+}
+
+.dt-trans .dt-badge {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: rgba(88, 101, 242, 0.24);
+  color: #a8b3ff;
+  font-size: 10px;
+  line-height: 15px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  cursor: default;
+  user-select: none;
+}
+
+.dt-trans .dt-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.dt-trans:hover {
+  border-left-color: rgba(88, 101, 242, 0.95);
+}
+
+.dt-trans:hover .dt-badge {
+  background: rgba(88, 101, 242, 0.42);
+  color: #ffffff;
+}
+
+/* 原文已被隐藏（replace 模式）时，让译文更突出 */
+html[data-dt-display='replace'] .dt-trans {
+  font-size: calc(var(--dt-font-size, 13px) + 1px);
+  border-left-width: 3px;
+}
+
+.dt-orig-hidden {
+  display: none !important;
+}
+
+/* ---- 翻译失败标记 ---- */
+
+.dt-error {
+  grid-column: 2 / -1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  margin-top: 2px;
+  padding: 1px 0 1px 8px;
+  border-left: 2px solid rgba(237, 66, 69, 0.6);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted, #949ba4);
+  overflow-wrap: anywhere;
+  animation: dt-fade-in 160ms ease-out;
+}
+
+.dt-error-icon {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgba(237, 66, 69, 0.18);
+  color: #ff9a9c;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+  user-select: none;
+}
+
+.dt-error-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dt-retry {
+  flex: 0 0 auto;
+  border: 1px solid rgba(237, 66, 69, 0.45);
+  background: transparent;
+  color: #ff9a9c;
+  border-radius: 4px;
+  font-size: 11px;
+  padding: 0 6px;
+  line-height: 17px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.dt-retry:hover {
+  background: rgba(237, 66, 69, 0.14);
+}
+
+/* ---- 输入框翻译提示（Alt+Enter 后弹出） ---- */
+
+.dt-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 96px;
+  z-index: 2147483000;
+  max-width: 68vw;
+  padding: 7px 14px;
+  border-radius: 8px;
+  background: rgba(30, 31, 34, 0.97);
+  border: 1px solid rgba(88, 101, 242, 0.55);
+  color: #dbdee1;
+  font-family: 'Microsoft YaHei UI', 'Segoe UI', system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(10px);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.dt-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+@keyframes dt-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}

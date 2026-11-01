@@ -1,0 +1,122 @@
+{
+  "url": "https://discord.com/channels/1545589274840272946/1545652267883962419",
+  "injected": true,
+  "hasCss": true,
+  "stats": {
+    "rendered": 21,
+    "queued": 0,
+    "inFlight": 0,
+    "queuedKeys": [],
+    "inFlightKeys": [],
+    "running": true
+  },
+  "rendered": 21,
+  "total": 21,
+  "rows": [
+    {
+      "id": "chat-messages-1545652267883962419-1545655520285950053",
+      "src": "DLSS-NR on AMD mod,v0.1.0 — Alpha (2026-09-03),Fir",
+      "trans": "AMD MOD上的DLSS-NR ， v0.1.0 — Alpha (2026-09-03) ，首次公开发布， http"
+    },
+    {
+      "id": "chat-messages-1545652267883962419-1545912229637914714",
+      "src": "DLSS-NR on AMD mod,Alpha v0.2.12,6% performance im",
+      "trans": "DLSS-NR on AMD mod，Alpha v0.2.12,6% performance improvement "
+    },
+    {
+      "id": "chat-messages-1545652267883962419-1546221406893899966",
+      "src": "DLSS-NR on AMD mod,Alpha v0.2.13,2% performance im",
+      "trans": "AMD MOD上的DLSS-NR ，与v0.2.12相比， Alpha v0.2.13,2%性能提升，修复了阻止优化正常"
+    },
+    {
+      "id": "chat-messages-1545652267883962419-1546237159126601858",
+      "src": "DLSS-NR on AMD mod,Alpha v0.2.14,Added support for",
+      "trans": "AMD MOD上的DLSS-NR ， Alpha v0.2.14 ，添加了对9060 XT的支持， RE Engine游"
+    },
+    {
+      "id": "chat-messages-1545652267883962419-1546346039689224282",
+      "src": "DLSS-NR on AMD mod,Alpha v0.2.15,Fixed a double ca",
+      "trans": "AMD MOD上的DLSS-NR ， Alpha v0.2.15 ，修复了FSR3游戏上的双重捕获问题，应删除一些闪烁，"
+    },
+    {
+      "id": "chat-messages-1545652267883962419-1546772133378654328",
+      "src": "DLSS-NR on AMD mod,Alpha v0.2.16,Fixed Marvel's Sp",
+      "trans": "AMD MOD上的DLSS-NR ， Alpha v0.2.16 ，修复了Marvel's Spider-Man Rem"
+    },
+    {
+      "id": "chat-messages-1545652267883962419-1547242987677814834",
+      "src": "DLSS-NR on AMD mod,Alpha v0.2.17,Improved HDR expo",
+      "trans": "AMD MOD上的DLSS-NR ， Alpha v0.2.17 ，改进了提供曝光纹理的游戏的HDR曝光处理，修复了多G"
+    },
+    {
+      "id": "chat-messages-1545652267883962419-1547818481439735858",
+      "src": "DLSS-NR on AMD mod,Alpha v0.2.18,Speculative fix f",
+      "trans": "AMD MOD上的DLSS-NR ， Alpha v0.2.18 ， Monster Hunter Wilds颜色纹理问"
+    },
+    {
+      "id": "chat-messages-1545652267883962419-1548431446375403630",
+      "src": "DLSS-NR on AMD mod,Alpha 0.3.0,This release implem",
+      "trans": "AMD 模式下的 DLSS-NR,Alpha 0.3.0，此版本实现了迄今为止最受欢迎的功能:，添加了预扩展模式 (默认"
+    },
+    {
+      "id": "chat-messages-1545652267883962419-1549533342582702080",
+      "src": "DLSS-NR on AMD mod,Alpha 0.3.1,Switched to a new w",
+      "trans": "AMD 模块上的 DLSS-NR,Alpha 0.3.1，切换到新的等待方式，提高性能并减少卡顿的可能性，修复了菜单和慢"
+    },
+    {
+      "id": "chat-messages-1545652267883962419-1552957806829772842",
+      "src": "DLSS-NR on AMD mod,Alpha 0.3.2,Fidelity improvemen",
+      "trans": "AMD 模块上的 DLSS-NR,Alpha 0.3.2，保真度改进：输出质量有所提高，现在更接近原始 DLSS-NR，"
+    },
+    {
+      "id": "chat-messages-1545652267883962419-1553072188226142228",
+      "src": "DLSS-NR on AMD mod,Alpha 0.3.3,BIG 23% performance",
+      "trans": "AMD mod 上的 DLSS-NR、Alpha 0.3.3、比 v0.3.2 提高了 23% 的性能、新的带集成设置编"
+    },
+    {
+      "id": "chat-messages-1545652267883962419-1553094985849769985",
+      "src": "DLSS-NR on AMD mod,Alpha 0.4.0,42% performance imp",
+      "trans": "AMD mod上的DLSS-NR，Alpha 0.4.0,42%性能改进超过v0.3.3，https：github.co"
+    },
+    {
+      "id": "chat-messages-1545652267883962419-1553494315865604196",
+      "src": "DLSS-NR on AMD mod,Alpha 0.4.1,8% performance impr",
+      "trans": "DLSS-NR 在 AMD 模式下，Alpha 0.4.1，性能比 v0.4.0 提升 8%，在重游戏负载下额外提升 9"
+    },
+    {
+      "id": "chat-messages-1545652267883962419-1553833450602107063",
+      "src": "DLSS-NR on AMD mod,Alpha 0.4.2,15% performance imp",
+      "trans": "AMD 模式下的 DLSS-NR、Alpha 0.4.2、快速模式下比 v0.4.1(1080p、RX 9000) 性能"
+    },
+    {
+      "id": "chat-messages-1545652267883962419-1554017882055385180",
+      "src": "DLSS-NR on AMD mod,The 75 FPS update,Alpha 0.4.3,2",
+      "trans": "AMD 模式下的 DLSS-NR、75 FPS 更新、Alpha 0.4.3、参考质量模式下性能比 v0.4.2 提升 "
+    },
+    {
+      "id": "chat-messages-1545652267883962419-1554498804554666024",
+      "src": "DLSS-NR on AMD mod,Massive RDNA3 and fidelity impr",
+      "trans": "AMD 模块上的 DLSS-NR、大规模 RDNA3 和保真度改进、Alpha 0.5.0、RX 7000(RDNA3)"
+    },
+    {
+      "id": "chat-messages-1545652267883962419-1555046132089094217",
+      "src": "DLSS-NR on AMD mod,Alpha 0.5.1,RX 9000 (RDNA4):,8%",
+      "trans": "AMD mod、Alpha 0.5.1，RX 9000（RDNA 4）上的DLSS-NR：快速模式下的8%效能提升、指涉"
+    },
+    {
+      "id": "chat-messages-1545652267883962419-1555780777864728616",
+      "src": "DLSS-NR on AMD mod,Alpha 0.6.0,RX 6000 (RDNA2):,Ad",
+      "trans": "AMD 模块上的 DLSS-NR,Alpha 0.6.0,RX 6000(RDNA2):，增加了对 RX 6000 系列"
+    },
+    {
+      "id": "chat-messages-1545652267883962419-1561089276861743177",
+      "src": "Neural Rendering Supermod,This release spans two e",
+      "trans": "神经渲染超模，此版本跨越了两个早期访问版本，0.7.0 和 0.8.0，现在包含了所有主要的 DLSS 功能。所有功能都"
+    },
+    {
+      "id": "chat-messages-1545652267883962419-1561089308356513802",
+      "src": "Alpha 0.8.0,Added DLSS Frame Generation,FSR 4.1.1 ",
+      "trans": "Alpha 0.8.0、添加了 DLSS 帧生成、FSR 4.1.1 扩展现在与模式捆绑在一起，不再依赖于您的驱动程序、"
+    }
+  ]
+}

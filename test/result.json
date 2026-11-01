@@ -1,0 +1,62 @@
+[
+  {
+    "id": "chat-messages-1000-2001",
+    "src": "Hello everyone, how are you doing today? I just finished the new build",
+    "trans": "大家好，今天过得怎么样？我刚刚完成了新的构建。",
+    "lang": "en"
+  },
+  {
+    "id": "chat-messages-1000-2002",
+    "src": "こんにちは、今日はいい天気ですね。新しい武器を作りました。",
+    "trans": "你好，今天天气很好，我做了一个新的武器。",
+    "lang": "ja"
+  },
+  {
+    "id": "chat-messages-1000-2003",
+    "src": "안녕하세요, 이 모드는 정말 좋아요!",
+    "trans": "低好，这个模式真的很好!",
+    "lang": "ko"
+  },
+  {
+    "id": "chat-messages-1000-2004",
+    "src": "这条消息本来就是中文，不应该出现译文。",
+    "trans": null,
+    "lang": null
+  },
+  {
+    "id": "chat-messages-1000-2005",
+    "src": "Check this out @Alice and look at the emoji — it works!",
+    "trans": "看看这个@Alice，看看这个表情符号--它很有效！",
+    "lang": "en"
+  },
+  {
+    "id": "chat-messages-1000-2006",
+    "src": "Replying to Alice: 你好世界 this should be skipped Here is the fix:functio",
+    "trans": "修复方法是：也要先使用npm install。",
+    "lang": "en"
+  },
+  {
+    "id": "chat-messages-1000-2007",
+    "src": "Привет, как дела? Этот мод очень хороший.",
+    "trans": "嗨，你好吗？这个模块非常好。",
+    "lang": "ru"
+  },
+  {
+    "id": "chat-messages-1000-2008",
+    "src": "The ending is everyone dies and it is sad.",
+    "trans": "结局是悲伤的。",
+    "lang": "en"
+  },
+  {
+    "id": "chat-messages-1000-2009",
+    "src": "lol",
+    "trans": null,
+    "lang": null
+  },
+  {
+    "id": "chat-messages-1000-2010",
+    "src": "This is a considerably longer message that keeps going and going, incl",
+    "trans": "这是一条相当长的消息，它会一直持续下去，包括几个子句、逗号和细节，这样我们就可以验证翻译服务在通过批处理端点发送长消息时不会截断内容或删除长消息的尾部。",
+    "lang": "en"
+  }
+]

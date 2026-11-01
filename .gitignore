@@ -1,0 +1,22 @@
+# ---- 构建产物 ----
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+dist/
+node_modules/
+
+# ---- 移动端图标（本项目只发 Windows）----
+desktop/src-tauri/icons/android/
+desktop/src-tauri/icons/ios/
+
+# ---- 测试临时截图 ----
+test/*.png
+test/*.log
+
+# ---- 系统文件 ----
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# ---- 本地个人文件 ----
+*.local
+.env

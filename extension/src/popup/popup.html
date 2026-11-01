@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Discord 自动翻译</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo">译</div>
+        <div class="brand-text">
+          <h1>Discord 自动翻译</h1>
+          <p id="statusText">检查中…</p>
+        </div>
+      </div>
+      <label class="switch" title="开启 / 关闭自动翻译">
+        <input type="checkbox" id="enabled" />
+        <span class="slider"></span>
+      </label>
+    </header>
+
+    <main>
+      <section class="card">
+        <div class="field">
+          <label for="targetLang">翻译成</label>
+          <select id="targetLang"></select>
+        </div>
+
+        <div class="field">
+          <label for="provider">翻译服务</label>
+          <select id="provider">
+            <option value="auto">自动（国内直连优先，推荐）</option>
+            <option value="tencent">腾讯交互翻译（国内直连）</option>
+            <option value="google">Google 翻译</option>
+            <option value="caiyun">彩云小译</option>
+            <option value="mymemory">MyMemory</option>
+            <option value="openai">OpenAI 兼容（DeepSeek / Ollama / OneAPI）</option>
+            <option value="libre">LibreTranslate（自建）</option>
+          </select>
+        </div>
+
+        <div class="field provider-google">
+          <label for="googleEndpoint">Google 接口地址</label>
+          <input type="text" id="googleEndpoint" spellcheck="false" />
+          <p class="hint">仅在选择 Google 或自动模式兜底时使用。访问不了 Google 可换成反向代理地址。</p>
+        </div>
+
+        <div class="field provider-openai hidden">
+          <label for="openaiBase">API Base</label>
+          <input type="text" id="openaiBase" spellcheck="false" placeholder="https://api.deepseek.com/v1" />
+        </div>
+        <div class="field provider-openai hidden">
+          <label for="openaiKey">API Key</label>
+          <input type="password" id="openaiKey" spellcheck="false" placeholder="sk-..." />
+        </div>
+        <div class="field provider-openai hidden">
+          <label for="openaiModel">模型</label>
+          <input type="text" id="openaiModel" spellcheck="false" placeholder="deepseek-chat" />
+        </div>
+
+        <div class="field provider-libre hidden">
+          <label for="libreUrl">LibreTranslate 地址</label>
+          <input type="text" id="libreUrl" spellcheck="false" placeholder="http://127.0.0.1:5000" />
+        </div>
+        <div class="field provider-libre hidden">
+          <label for="libreKey">API Key（可选）</label>
+          <input type="password" id="libreKey" spellcheck="false" />
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="row">
+          <div class="field compact">
+            <label for="display">显示方式</label>
+            <select id="display">
+              <option value="below">原文下方小字</option>
+              <option value="replace">隐藏原文，只显示译文</option>
+            </select>
+          </div>
+          <div class="field compact">
+            <label for="fontSize">译文字号</label>
+            <select id="fontSize">
+              <option value="12">12 px</option>
+              <option value="13">13 px</option>
+              <option value="14">14 px</option>
+              <option value="15">15 px</option>
+              <option value="16">16 px</option>
+            </select>
+          </div>
+        </div>
+
+        <label class="checkline">
+          <input type="checkbox" id="skipSameLang" />
+          <span>已经是目标语言的消息不显示译文</span>
+        </label>
+      </section>
+
+      <section class="actions">
+        <button id="btnTest" class="btn ghost">测试连接</button>
+        <button id="btnRetranslate" class="btn ghost">重新翻译</button>
+      </section>
+
+      <section class="actions">
+        <button id="btnClearCache" class="btn ghost danger">清除翻译缓存</button>
+      </section>
+
+      <div id="toast" class="toast"></div>
+
+      <footer class="footer">
+        <span id="cacheInfo">缓存：—</span>
+        <span>Alt + T 快速开关</span>
+      </footer>
+    </main>
+
+    <script src="../core/settings.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

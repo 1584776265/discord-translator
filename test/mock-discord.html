@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Mock Discord — 翻译注入测试</title>
+    <style>
+      :root {
+        --text-normal: #dbdee1;
+        --header-secondary: #b5bac1;
+        --background-primary: #313338;
+        --background-secondary: #2b2d31;
+        --dt-font-size: 13px;
+      }
+      body {
+        margin: 0;
+        background: #313338;
+        color: var(--text-normal);
+        font-family: 'gg sans', 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif;
+        font-size: 16px;
+        line-height: 1.375;
+      }
+      .chat {
+        padding: 16px 24px;
+        max-width: 900px;
+      }
+      ol {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .messageListItem_x {
+        padding: 6px 0;
+      }
+      .contents_zz {
+        display: grid;
+        grid-template-columns: 40px 1fr;
+        column-gap: 16px;
+      }
+      .avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: #5865f2;
+        grid-row: span 2;
+      }
+      .header_1 {
+        margin: 0;
+        font-size: 16px;
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+      .username_2 {
+        color: #f2f3f5;
+        font-weight: 600;
+      }
+      .timestamp_3 {
+        color: #949ba4;
+        font-size: 12px;
+      }
+      .messageContent_4 {
+        margin-top: 2px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .repliedMessage_9 {
+        font-size: 14px;
+        color: #b5bac1;
+        margin-bottom: 2px;
+      }
+      .inlineCode_x {
+        background: #2b2d31;
+        padding: 1px 4px;
+        border-radius: 3px;
+        font-family: monospace;
+      }
+      pre {
+        background: #2b2d31;
+        padding: 8px 12px;
+        border-radius: 4px;
+        overflow-x: auto;
+        font-family: monospace;
+        font-size: 13px;
+      }
+      .spoiler {
+        background: #202225;
+        color: transparent;
+        border-radius: 4px;
+      }
+      .emoji {
+        width: 20px;
+        height: 20px;
+        display: inline-block;
+        background: #444;
+        vertical-align: -4px;
+      }
+      .mention {
+        background: rgba(88, 101, 242, 0.3);
+        color: #c9cdfb;
+        padding: 0 2px;
+        border-radius: 3px;
+      }
+      .panel {
+        position: fixed;
+        right: 12px;
+        top: 12px;
+        width: 260px;
+        background: #1e1f22;
+        border: 1px solid #3f4147;
+        border-radius: 8px;
+        padding: 12px;
+        font-size: 12px;
+      }
+      .panel h3 {
+        margin: 0 0 8px;
+        font-size: 13px;
+        color: #fff;
+      }
+      .panel div {
+        color: #949ba4;
+        margin-bottom: 4px;
+      }
+      .panel b {
+        color: #dbdee1;
+      }
+    </style>
+    <link rel="stylesheet" href="../extension/src/content/content.css" />
+  </head>
+  <body>
+    <div class="panel">
+      <h3>测试面板</h3>
+      <div>状态：<b id="stat">初始化…</b></div>
+      <div>已渲染译文：<b id="cnt">0</b></div>
+      <div>缓存条目：<b id="cache">0</b></div>
+    </div>
+
+    <div class="chat">
+      <ol class="scroller_test">
+        <li id="chat-messages-1000-2001" class="messageListItem_x">
+          <div class="contents_zz">
+            <img class="avatar" alt="" />
+            <h3 class="header_1"><span class="username_2">Alice</span><span class="timestamp_3">Today at 10:01</span></h3>
+            <div id="message-content-2001" class="messageContent_4">Hello everyone, how are you doing today? I just finished the new build.</div>
+          </div>
+        </li>
+
+        <li id="chat-messages-1000-2002" class="messageListItem_x">
+          <div class="contents_zz">
+            <img class="avatar" alt="" />
+            <h3 class="header_1"><span class="username_2">Yuki</span><span class="timestamp_3">Today at 10:02</span></h3>
+            <div id="message-content-2002" class="messageContent_4">こんにちは、今日はいい天気ですね。新しい武器を作りました。</div>
+          </div>
+        </li>
+
+        <li id="chat-messages-1000-2003" class="messageListItem_x">
+          <div class="contents_zz">
+            <img class="avatar" alt="" />
+            <h3 class="header_1"><span class="username_2">Minjun</span><span class="timestamp_3">Today at 10:03</span></h3>
+            <div id="message-content-2003" class="messageContent_4">안녕하세요, 이 모드는 정말 좋아요!</div>
+          </div>
+        </li>
+
+        <li id="chat-messages-1000-2004" class="messageListItem_x">
+          <div class="contents_zz">
+            <img class="avatar" alt="" />
+            <h3 class="header_1"><span class="username_2">中文用户</span><span class="timestamp_3">Today at 10:04</span></h3>
+            <div id="message-content-2004" class="messageContent_4">这条消息本来就是中文，不应该出现译文。</div>
+          </div>
+        </li>
+
+        <li id="chat-messages-1000-2005" class="messageListItem_x">
+          <div class="contents_zz">
+            <img class="avatar" alt="" />
+            <h3 class="header_1"><span class="username_2">Dev</span><span class="timestamp_3">Today at 10:05</span></h3>
+            <div id="message-content-2005" class="messageContent_4">Check this out <span class="mention">@Alice</span> and look at the emoji <img class="emoji" alt="😀" /> — it works!</div>
+          </div>
+        </li>
+
+        <li id="chat-messages-1000-2006" class="messageListItem_x">
+          <div class="contents_zz">
+            <img class="avatar" alt="" />
+            <h3 class="header_1"><span class="username_2">Coder</span><span class="timestamp_3">Today at 10:06</span></h3>
+            <div id="message-content-2006" class="messageContent_4">
+              <div class="repliedMessage_9">Replying to Alice: 你好世界 this should be skipped</div>
+              Here is the fix:<pre><code>function hello() {
+  return "Hello World";
+}</code></pre>Also use <span class="inlineCode_x">npm install</span> first.
+            </div>
+          </div>
+        </li>
+
+        <li id="chat-messages-1000-2007" class="messageListItem_x">
+          <div class="contents_zz">
+            <img class="avatar" alt="" />
+            <h3 class="header_1"><span class="username_2">Russian</span><span class="timestamp_3">Today at 10:07</span></h3>
+            <div id="message-content-2007" class="messageContent_4">Привет, как дела? Этот мод очень хороший.</div>
+          </div>
+        </li>
+
+        <li id="chat-messages-1000-2008" class="messageListItem_x">
+          <div class="contents_zz">
+            <img class="avatar" alt="" />
+            <h3 class="header_1"><span class="username_2">Spoiler</span><span class="timestamp_3">Today at 10:08</span></h3>
+            <div id="message-content-2008" class="messageContent_4">The ending is <span class="spoiler">everyone dies</span> and it is sad.</div>
+          </div>
+        </li>
+
+        <li id="chat-messages-1000-2009" class="messageListItem_x">
+          <div class="contents_zz">
+            <img class="avatar" alt="" />
+            <h3 class="header_1"><span class="username_2">Short</span><span class="timestamp_3">Today at 10:09</span></h3>
+            <div id="message-content-2009" class="messageContent_4">lol</div>
+          </div>
+        </li>
+
+        <li id="chat-messages-1000-2010" class="messageListItem_x">
+          <div class="contents_zz">
+            <img class="avatar" alt="" />
+            <h3 class="header_1"><span class="username_2">Long</span><span class="timestamp_3">Today at 10:10</span></h3>
+            <div id="message-content-2010" class="messageContent_4">This is a considerably longer message that keeps going and going, including several clauses, commas, and details, so that we can verify the translation service does not truncate content or drop the tail of a long message when it is sent through the batch endpoint.</div>
+          </div>
+        </li>
+      </ol>
+    </div>
+
+    <script src="../extension/src/core/engine.js"></script>
+    <script src="../extension/src/core/dom.js"></script>
+    <script>
+      window.__settings = {
+        enabled: true,
+        provider: 'auto',
+        targetLang: 'zh-CN',
+        sourceLang: 'auto',
+        skipSameLang: true,
+        display: 'below',
+        fontSize: 13,
+        concurrency: 4,
+        timeout: 20000,
+        retries: 2
+      };
+
+      const stat = document.getElementById('stat');
+      const cnt = document.getElementById('cnt');
+      const cache = document.getElementById('cache');
+
+      // 收集日志便于外部抓取
+      window.__logs = [];
+      const origLog = console.log;
+      const origWarn = console.warn;
+      console.log = function () {
+        window.__logs.push(Array.prototype.slice.call(arguments).join(' '));
+        origLog.apply(console, arguments);
+      };
+      console.warn = function () {
+        window.__logs.push('WARN ' + Array.prototype.slice.call(arguments).join(' '));
+        origWarn.apply(console, arguments);
+      };
+
+      DTDom.setDebug(true);
+
+      // ?auto=0 时不自动启动，留给真实 content script 注入测试
+      if (new URLSearchParams(location.search).get('auto') !== '0') {
+        DTDom.start({
+          translate: (texts, s) => DTEngine.translate(texts, s),
+          getSettings: () => window.__settings
+        });
+        stat.textContent = '已启动';
+      } else {
+        stat.textContent = '等待 content script 注入';
+      }
+
+      setInterval(() => {
+        const s = DTDom.stats();
+        cnt.textContent = s.rendered + ' 条';
+        cache.textContent = DTEngine.cacheStats().size + ' 条';
+      }, 500);
+
+      // 暴露给外部脚本抓取结果
+      window.__dumpResult = function () {
+        const out = [];
+        document.querySelectorAll('li[id^="chat-messages-"]').forEach((li) => {
+          const content = li.querySelector('[id^="message-content-"]');
+          const trans = li.querySelector('.dt-trans .dt-text');
+          out.push({
+            id: li.id,
+            src: content ? content.textContent.replace(/\s+/g, ' ').trim().slice(0, 70) : '',
+            trans: trans ? trans.textContent : null,
+            lang: li.querySelector('.dt-trans') ? li.querySelector('.dt-trans').getAttribute('data-dt-lang') : null
+          });
+        });
+        return out;
+      };
+    </script>
+  </body>
+</html>

@@ -1,0 +1,51 @@
+[package]
+name = "discord-translator"
+version = "1.0.0"
+description = "Discord 自动翻译桌面版"
+authors = ["1584776265"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "discord_translator_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "DiscordTranslator"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+# 直接调 Win32：进程枚举/终止/发 WM_CLOSE/读写快捷方式。
+# 目的只有一个 —— 不再 spawn tasklist / taskkill / powershell，
+# 那些控制台程序即使带 CREATE_NO_WINDOW 也会在部分机器上闪一下黑窗。
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_Storage_FileSystem",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Shell",
+    "Win32_System_Com",
+] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["json"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+chrono = "0.4"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
