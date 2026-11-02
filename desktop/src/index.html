@@ -219,9 +219,16 @@
         <button id="btnInstallUpdate" class="btn small primary" hidden>下载并安装</button>
         <button id="btnOpenRelease" class="btn small" hidden>打开下载页</button>
       </div>
+      <div class="actions">
+        <button id="btnRollback" class="btn small danger" hidden>回滚到上一版本</button>
+      </div>
       <label class="check">
         <input type="checkbox" id="autoCheckUpdate" />
         <span>启动时自动检查更新</span>
+      </label>
+      <label class="check">
+        <input type="checkbox" id="openNotesAfterUpdate" />
+        <span>更新后打开发布说明</span>
       </label>
       <div class="field">
         <label for="updateProxy">更新用代理（留空 = 用系统代理，填 direct 直连）</label>
@@ -325,6 +332,7 @@
         <button id="btnPruneCache" class="btn small">清理 7 天前</button>
         <button id="btnOpenData" class="btn small">打开数据目录</button>
         <button id="btnTest" class="btn small">测试翻译源</button>
+        <button id="btnProbe" class="btn small">探测页面结构</button>
       </div>
 
       <label class="check">

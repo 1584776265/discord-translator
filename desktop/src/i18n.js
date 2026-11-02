@@ -377,6 +377,23 @@
     '检查失败：': 'Check failed: ',
     '更新失败：': 'Update failed: ',
 
+    /* ---- 回滚 / 自检（新增） ---- */
+    '回滚到 {v}': 'Roll back to {v}',
+    '回滚到 {v}？\n\n程序会退出、把旧版本换回来，然后自动重新打开。\n配置和术语表不受影响。':
+      'Roll back to {v}?\n\nThe app will quit, restore the previous version and reopen itself.\nYour settings and glossary are kept.',
+    '正在回滚…': 'Rolling back…',
+    '回滚失败：': 'Rollback failed: ',
+    '已更新到 v{v}。': 'Updated to v{v}.',
+    更新后打开发布说明: 'Open release notes after updating',
+    '页面上找不到消息节点，Discord 可能改了页面结构。点【探测页面结构】看诊断。':
+      'No message nodes found — Discord may have changed its layout. Use “Probe page structure” for diagnostics.',
+    翻译可能失效: 'Translation may be broken',
+    'Discord 页面结构似乎变了，请打开设置点【探测页面结构】。':
+      'The Discord page layout seems to have changed — open settings and run “Probe page structure”.',
+    '页面结构已写进下方日志。': 'Page structure written to the log below.',
+    '探测失败：': 'Probe failed: ',
+    探测页面结构: 'Probe page structure',
+
     /* ---- app.js 动态文案补充 ---- */
     '频道 {name}': 'Channel {name}',
     '已切换为 {label}，重新连接后生效。': 'Switched to {label}; reconnect to apply.',

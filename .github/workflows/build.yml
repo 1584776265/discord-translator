@@ -51,6 +51,25 @@ jobs:
           Write-Host "synced:"
           Get-ChildItem desktop/src | Select-Object Name, Length | Format-Table -AutoSize
 
+      # 前端是纯静态资源，构建时不会编译 JS：语法错会原样打进 exe，
+      # 表现为「界面白了/语言失效」，所以先逐个 node --check
+      - name: Syntax check (frontend js)
+        shell: pwsh
+        run: |
+          Get-ChildItem desktop/src/*.js | ForEach-Object {
+            node --check $_.FullName
+            if ($LASTEXITCODE -ne 0) { throw "syntax error in $($_.Name)" }
+            Write-Host "ok $($_.Name)"
+          }
+
+      # 轻量单测：纯函数，不联网、不需要浏览器。挂了就不该发版
+      - name: Unit tests (engine, no network)
+        run: node test/unit.test.js
+
+      - name: Unit tests (rust)
+        working-directory: desktop/src-tauri
+        run: cargo test --lib
+
       - name: Install Tauri CLI
         run: npm install -g @tauri-apps/cli@^2
 

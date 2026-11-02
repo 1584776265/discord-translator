@@ -290,6 +290,163 @@ pub fn is_installed_build() -> bool {
 }
 
 /* ------------------------------------------------------------------ */
+/* 备份与回滚                                                          */
+/* ------------------------------------------------------------------ */
+
+fn exe_path() -> Result<std::path::PathBuf, String> {
+    std::env::current_exe().map_err(|e| {
+        t(
+            &format!("取不到自身路径: {}", e),
+            &format!("Cannot resolve own path: {}", e),
+        )
+    })
+}
+
+/// 更新前把当前 exe 复制一份：`DiscordTranslator.exe.bak-1.2.2`
+pub fn backup_current_exe() -> Option<String> {
+    let exe = exe_path().ok()?;
+    let name = exe.file_name()?.to_string_lossy().to_string();
+    let ver = current_version();
+    let dst = exe.with_file_name(format!("{}.bak-{}", name, ver));
+
+    std::fs::copy(&exe, &dst).ok()?;
+    prune_backups(3);
+
+    Some(format!("{}.bak-{}", name, ver))
+}
+
+/// 目录里所有 `<exe>.bak-x.y.z`，按版本从新到旧
+fn list_backups() -> Vec<(String, std::path::PathBuf)> {
+    let exe = match exe_path() {
+        Ok(p) => p,
+        Err(_) => return Vec::new(),
+    };
+    let dir = match exe.parent() {
+        Some(d) => d,
+        None => return Vec::new(),
+    };
+    let name = match exe.file_name() {
+        Some(n) => n.to_string_lossy().to_string(),
+        None => return Vec::new(),
+    };
+
+    let mut out = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(dir) {
+        for e in rd.flatten() {
+            let fname = e.file_name().to_string_lossy().to_string();
+            let prefix = format!("{}.bak-", name);
+            if let Some(ver) = fname.strip_prefix(&prefix) {
+                out.push((ver.to_string(), e.path()));
+            }
+        }
+    }
+
+    out.sort_by(|a, b| parse_ver(&b.0).cmp(&parse_ver(&a.0)));
+    out
+}
+
+fn prune_backups(keep: usize) {
+    for (_, p) in list_backups().into_iter().skip(keep) {
+        let _ = std::fs::remove_file(p);
+    }
+}
+
+/// 当前可回滚到的版本号（没有备份就是 None）
+pub fn backup_version() -> Option<String> {
+    list_backups().into_iter().next().map(|(v, _)| v)
+}
+
+/// 回滚：把最新的备份换回原位再重新拉起程序
+pub fn rollback() -> Result<String, String> {
+    let (ver, bak) = match list_backups().into_iter().next() {
+        Some(v) => v,
+        None => {
+            return Err(t(
+                "没有可回滚的备份：只有被自动更新替换过的版本才会留备份",
+                "No backup available — only versions replaced by an update keep one",
+            ))
+        }
+    };
+
+    let exe = exe_path()?;
+
+    let dir = std::env::temp_dir().join("DiscordTranslatorUpdate");
+    let _ = std::fs::create_dir_all(&dir);
+    let bat = dir.join("rollback.bat");
+
+    let script = format!(
+        concat!(
+            "@echo off\r\n",
+            "chcp 65001 >nul\r\n",
+            "ping 127.0.0.1 -n 4 >nul\r\n",
+            "move /y \"{exe}\" \"{exe}.bad\" >nul 2>&1\r\n",
+            "move /y \"{bak}\" \"{exe}\" >nul 2>&1\r\n",
+            "start \"\" \"{exe}\"\r\n",
+            "del \"%~f0\"\r\n"
+        ),
+        exe = exe.display(),
+        bak = bak.display()
+    );
+
+    std::fs::write(&bat, script).map_err(|e| {
+        t(
+            &format!("写入回滚脚本失败: {}", e),
+            &format!("Cannot write the rollback script: {}", e),
+        )
+    })?;
+
+    let mut cmd = Command::new("cmd");
+    cmd.arg("/c").arg(&bat);
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    cmd.spawn().map_err(|e| {
+        t(
+            &format!("启动回滚脚本失败: {}", e),
+            &format!("Cannot start the rollback script: {}", e),
+        )
+    })?;
+
+    let msg = t(
+        &format!("正在回滚到 {}，程序会重启", ver),
+        &format!("Rolling back to {} — the app will restart", ver),
+    );
+    crate::logging::write("INFO", &msg);
+
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(1500));
+        std::process::exit(0);
+    });
+
+    Ok(msg)
+}
+
+/* ------------------------------------------------------------------ */
+/* 更新后「看发布说明」的标记文件                                      */
+/* ------------------------------------------------------------------ */
+
+fn notes_marker() -> PathBuf {
+    crate::config::app_data_dir().join(".pending-notes")
+}
+
+fn write_pending_notes(url: &str) {
+    let _ = std::fs::write(notes_marker(), url);
+}
+
+/// 读一次就删：新版本启动时用它决定要不要打开更新说明
+pub fn take_pending_notes() -> Option<String> {
+    let s = std::fs::read_to_string(notes_marker()).ok()?;
+    let _ = std::fs::remove_file(notes_marker());
+
+    let s = s.trim().to_string();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
+}
+
+/* ------------------------------------------------------------------ */
 /* 检查更新                                                            */
 /* ------------------------------------------------------------------ */
 
@@ -605,6 +762,14 @@ pub async fn install() -> Result<String, String> {
         &format!("update: {} -> {}, sha256 ok", current_version(), remote.version),
     );
 
+    // ---- 留一份当前 exe：装坏了能一键换回去（自动更新唯一的安全网）----
+    if let Some(name) = backup_current_exe() {
+        crate::logging::write("INFO", &format!("旧版本已备份为 {}", name));
+    }
+
+    // 装完是新版本了，把「看发布说明」的链接留到下次启动
+    write_pending_notes(&remote.html_url);
+
     // ---- 备份配置（术语表等），安装器不会动 %APPDATA%，这里只是加一层保险 ----
     let backup = backup_config();
 
@@ -689,4 +854,54 @@ pub async fn install() -> Result<String, String> {
 
     crate::logging::write("INFO", &msg);
     Ok(msg)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_ver_handles_prefix_and_missing_parts() {
+        assert_eq!(parse_ver("v1.2.3"), (1, 2, 3));
+        assert_eq!(parse_ver("1.2.2"), (1, 2, 2));
+        assert_eq!(parse_ver("1.2"), (1, 2, 0));
+        assert_eq!(parse_ver(""), (0, 0, 0));
+    }
+
+    #[test]
+    fn parse_ver_compares_numerically() {
+        assert!(parse_ver("1.10.0") > parse_ver("1.9.9"));
+        assert!(parse_ver("2.0.0") > parse_ver("1.99.99"));
+        assert!(parse_ver("1.2.2") > parse_ver("1.2.1"));
+    }
+
+    #[test]
+    fn pick_hash_requires_the_exact_file_name() {
+        let txt = "aaa  DiscordTranslator.exe\nbbb  DiscordTranslator_1.2.2_x64-setup.exe\n";
+
+        assert_eq!(
+            pick_hash(txt, "DiscordTranslator_1.2.2_x64-setup.exe"),
+            Some("bbb".to_string())
+        );
+        assert_eq!(pick_hash(txt, "DiscordTranslator_1.2.1_x64-setup.exe"), None);
+    }
+
+    #[test]
+    fn pick_hash_ignores_blank_lines_and_crlf() {
+        let txt = "\r\n\r\naaa  DiscordTranslator.exe\r\n\r\n";
+        assert_eq!(pick_hash(txt, "DiscordTranslator.exe"), Some("aaa".to_string()));
+    }
+
+    #[test]
+    fn remote_from_tag_builds_matching_urls() {
+        let r = remote_from_tag("9.8.7");
+
+        assert_eq!(r.version, "9.8.7");
+        assert_eq!(
+            r.setup.as_ref().unwrap().name,
+            "DiscordTranslator_9.8.7_x64-setup.exe"
+        );
+        assert!(r.setup.as_ref().unwrap().browser_download_url.contains("/download/v9.8.7/"));
+        assert!(r.sha.is_some());
+    }
 }

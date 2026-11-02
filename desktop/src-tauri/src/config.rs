@@ -78,6 +78,8 @@ pub struct Config {
     // ---- 自动更新 ----
     /// 启动后静默检查一次
     pub auto_check_update: bool,
+    /// 更新装完后的第一次启动，自动打开发布说明
+    pub open_notes_after_update: bool,
     /// 空 = 自动读系统代理；direct = 直连；其余当作 host:port
     pub update_proxy: String,
 
@@ -118,6 +120,7 @@ impl Default for Config {
             channel: "stable".into(),
             language: "auto".into(),
             auto_check_update: true,
+            open_notes_after_update: true,
             update_proxy: String::new(),
             autostart: false,
             minimize_to_tray: true,

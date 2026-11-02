@@ -8,14 +8,82 @@
 
   const NS = 'dt';
 
+  // 消息节点给 2~3 套选择器：Discord 改版时先换选择器，而不是整体静默失效。
+  // 数组顺序即优先级，0 号是首选（目前实测命中率最高）。
   const SEL = {
-    listItem: 'li[id^="chat-messages-"]',
-    content: '[id^="message-content-"]',
-    replied: '[class*="repliedMessage_"]',
-    username: '[class*="username_"]',
+    listItem: [
+      'li[id^="chat-messages-"]',
+      '[data-list-item-id^="chat-messages"]',
+      'li[class*="messageListItem"]'
+    ],
+    content: [
+      '[id^="message-content-"]',
+      '[class*="messageContent"]',
+      '[class*="markup"]'
+    ],
+    // 下面这些只取元信息，用逗号并列即可，closest() 也认
+    replied: '[class*="repliedMessage_"], [class*="repliedMessage"]',
+    username: '[class*="username_"], [class*="username"]',
     timestamp: 'time[datetime]',
     toolbar: '[class*="messageButtons_"], [class*="buttons_"]'
   };
+
+  // 命中的是第几套（0 = 首选），-1 = 还没命中过
+  const selUsed = { listItem: -1, content: -1 };
+
+  function pickAll(key, scope) {
+    const list = SEL[key];
+    const rootEl = scope || document;
+
+    for (let i = 0; i < list.length; i++) {
+      const els = rootEl.querySelectorAll(list[i]);
+      if (els.length) {
+        selUsed[key] = i;
+        return els;
+      }
+    }
+
+    return [];
+  }
+
+  /** 给「注入自检」和「结构探测」用：让外部一眼看出现在靠哪套选择器工作 */
+  function health() {
+    const items = pickAll('listItem');
+    const contents = pickAll('content');
+
+    return {
+      running,
+      url: String(location.href || ''),
+      items: items.length,
+      contents: contents.length,
+      rendered: document.querySelectorAll('.' + NS + '-trans').length,
+      errors: document.querySelectorAll('.' + NS + '-error').length,
+      queued: queue.length,
+      inFlight: inFlight.size,
+      listItemSel: selUsed.listItem,
+      contentSel: selUsed.content,
+      editor: !!document.querySelector('[role="textbox"][contenteditable="true"]')
+    };
+  }
+
+  /** 诊断用：把每套候选选择器各自命中多少打在同一个对象里 */
+  function probe() {
+    const counts = {};
+    ['listItem', 'content'].forEach((key) => {
+      SEL[key].forEach((s) => {
+        counts[s] = document.querySelectorAll(s).length;
+      });
+    });
+
+    return {
+      url: String(location.href || ''),
+      counts,
+      replied: document.querySelectorAll(SEL.replied).length,
+      username: document.querySelectorAll(SEL.username).length,
+      editor: !!document.querySelector('[role="textbox"][contenteditable="true"]'),
+      dtNodes: document.querySelectorAll('.' + NS + '-trans').length
+    };
+  }
 
   const SKIP_TAGS = {
     PRE: 1,
@@ -439,7 +507,7 @@
   function inspect(li) {
     if (!li || !li.isConnected) return;
 
-    const contents = li.querySelectorAll(SEL.content);
+    const contents = pickAll('content', li);
     if (contents.length === 0) {
       removeNode(li);
       return;
@@ -544,11 +612,11 @@
       removeAllNodes();
       return;
     }
-    const items = document.querySelectorAll(SEL.listItem);
+    const items = pickAll('listItem');
     for (let i = 0; i < items.length; i++) inspect(items[i]);
     // 消息可能不在 li 里（极少数布局），兜底扫描
     if (items.length === 0) {
-      const contents = document.querySelectorAll(SEL.content);
+      const contents = pickAll('content');
       for (let i = 0; i < contents.length; i++) {
         const li = contents[i].closest('li') || contents[i].parentElement;
         if (li) inspect(li);
@@ -1045,7 +1113,9 @@
     setDebug: (v) => {
       debugMode = !!v;
     },
-    SEL
+    SEL,
+    health,
+    probe
   };
 
   root.DTDom = api;

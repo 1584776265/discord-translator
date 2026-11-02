@@ -1268,7 +1268,9 @@
     networkInfo,
     LANG_NAMES,
     PROVIDERS,
-    AUTO_CHAIN
+    AUTO_CHAIN,
+    // 纯函数，给 CI 单测用（不联网）
+    __test__: { splitLongText, looksEchoed, packBatches, LONG_TEXT_LIMIT, chunkArray }
   };
 
   root.DTEngine = api;

@@ -100,12 +100,23 @@ fn open_url(url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn rollback_update() -> Result<String, String> {
+    update::rollback()
+}
+
+#[tauri::command]
+fn take_update_notes() -> Option<String> {
+    update::take_pending_notes()
+}
+
+#[tauri::command]
 fn app_info() -> serde_json::Value {
     serde_json::json!({
         "version": update::current_version(),
         "installed": update::is_installed_build(),
         "lang": i18n::current(),
         "proxy": update::proxy_url().unwrap_or_default(),
+        "backup": update::backup_version(),
     })
 }
 
@@ -458,12 +469,36 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 
-    let show = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
-    let toggle = MenuItem::with_id(app, "toggle", "暂停 / 继续翻译", true, None::<&str>)?;
+    let show = MenuItem::with_id(app, "show", i18n::t("显示主窗口", "Show window"), true, None::<&str>)?;
+    let toggle = MenuItem::with_id(
+        app,
+        "toggle",
+        i18n::t("暂停 / 继续翻译", "Pause / resume translation"),
+        true,
+        None::<&str>,
+    )?;
+    let check = MenuItem::with_id(
+        app,
+        "check",
+        i18n::t("检查更新", "Check for updates"),
+        true,
+        None::<&str>,
+    )?;
+    let rollback = MenuItem::with_id(
+        app,
+        "rollback",
+        i18n::t("回滚到上一版本", "Roll back to the previous version"),
+        update::backup_version().is_some(),
+        None::<&str>,
+    )?;
     let sep = PredefinedMenuItem::separator(app)?;
-    let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+    let sep2 = PredefinedMenuItem::separator(app)?;
+    let quit = MenuItem::with_id(app, "quit", i18n::t("退出", "Quit"), true, None::<&str>)?;
 
-    let menu = Menu::with_items(app, &[&show, &toggle, &sep, &quit])?;
+    let menu = Menu::with_items(
+        app,
+        &[&show, &toggle, &sep, &check, &rollback, &sep2, &quit],
+    )?;
 
     let icon = app
         .default_window_icon()
@@ -484,6 +519,19 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
             }
             "toggle" => {
                 let _ = app.emit("dt:toggle", ());
+            }
+            "check" => {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.show();
+                    let _ = w.set_focus();
+                }
+                let _ = app.emit("dt:check-update", ());
+            }
+            "rollback" => {
+                if let Err(e) = update::rollback() {
+                    logging::write("ERROR", &format!("回滚失败: {}", e));
+                    let _ = app.emit("dt:rollback-failed", e);
+                }
             }
             "quit" => {
                 logging::write("INFO", "用户从托盘退出");
@@ -579,6 +627,8 @@ pub fn run() {
             open_url,
             update_check,
             update_install,
+            rollback_update,
+            take_update_notes,
             open_data_dir,
             discord_status,
             start_discord,

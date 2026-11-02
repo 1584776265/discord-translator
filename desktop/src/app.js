@@ -697,6 +697,7 @@
           $('btnConnect').textContent = t('重新连接');
           log('INFO', t('已注入到 Discord: ') + S.pageUrl);
           startPolling();
+          selfCheck();
           resolve();
         } catch (e) {
           S.cdpReady = false;
@@ -1405,6 +1406,8 @@
 
     $('btnCheckUpdate').addEventListener('click', () => checkUpdate(true));
 
+    $('btnProbe').addEventListener('click', probePage);
+
     $('btnInstallUpdate').addEventListener('click', installUpdate);
 
     $('btnOpenRelease').addEventListener('click', () => {
@@ -1419,6 +1422,29 @@
     $('autoCheckUpdate').addEventListener('change', (e) =>
       saveCfg({ autoCheckUpdate: e.target.checked })
     );
+
+    $('openNotesAfterUpdate').addEventListener('change', (e) =>
+      saveCfg({ openNotesAfterUpdate: e.target.checked })
+    );
+
+    $('btnRollback').addEventListener('click', async () => {
+      const v = (S.appInfo && S.appInfo.backup) || '';
+      const ok = confirm(
+        t('回滚到 {v}？\n\n程序会退出、把旧版本换回来，然后自动重新打开。\n配置和术语表不受影响。', {
+          v: v
+        })
+      );
+      if (!ok) return;
+
+      setHint(t('正在回滚…'));
+      try {
+        const msg = await invoke('rollback_update');
+        setHint(msg);
+        log('INFO', msg);
+      } catch (e) {
+        setHint(t('回滚失败：') + ((e && e.message) || e), true);
+      }
+    });
 
     $('updateProxy').addEventListener('change', (e) =>
       saveCfg({ updateProxy: e.target.value.trim() })
@@ -1717,6 +1743,7 @@
     $('channel').value = c.channel || 'stable';
     $('language').value = c.language || 'auto';
     $('autoCheckUpdate').checked = c.autoCheckUpdate !== false;
+    $('openNotesAfterUpdate').checked = c.openNotesAfterUpdate !== false;
     $('updateProxy').value = c.updateProxy || '';
     $('autostart').checked = !!c.autostart;
     applyTheme();
@@ -1745,6 +1772,15 @@
     $('verDetail').textContent = S.appInfo.installed
       ? t('安装版：下载校验后静默升级，配置与术语表自动保留。')
       : t('便携版：只提示新版本，需要手动替换 exe。');
+
+    // 有备份才显示回滚按钮（只有被自动更新替换过的版本才有）
+    const rb = $('btnRollback');
+    if (S.appInfo.backup) {
+      rb.hidden = false;
+      rb.textContent = t('回滚到 {v}', { v: S.appInfo.backup });
+    } else {
+      rb.hidden = true;
+    }
   }
 
   async function checkUpdate(manual) {
@@ -1811,6 +1847,56 @@
   }
 
   /* ---------------------------------------------------------------- */
+  /* 注入自检与页面结构探测                                             */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * 注入 15 秒后回头确认「注入层真的在工作」。
+   * 没有这一步，Discord 改版时用户看到的只是「翻译没反应」，
+   * 而界面一切正常，最后只能来问人。
+   */
+  async function selfCheck() {
+    await sleep(15000);
+    if (!S.cdpReady) return;
+
+    let h;
+    try {
+      h = await cdpEvaluate(
+        '(window.DTDom && window.DTDom.health) ? window.DTDom.health() : null'
+      );
+    } catch (e) {
+      return;
+    }
+    if (!h) return;
+
+    if (h.listItemSel > 0 || h.contentSel > 0) {
+      log(
+        'WARN',
+        `备用选择器已启用（listItem #${h.listItemSel + 1} / content #${h.contentSel + 1}），` +
+          'Discord 可能改过类名，建议确认译文是否正常'
+      );
+    }
+
+    if (h.items === 0 && h.contents === 0 && /\/channels\//.test(String(h.url || ''))) {
+      log('ERROR', `自检失败：页面上找不到任何消息节点（${h.url}）`);
+      setHint(t('页面上找不到消息节点，Discord 可能改了页面结构。点【探测页面结构】看诊断。'), true);
+      notify(t('翻译可能失效'), t('Discord 页面结构似乎变了，请打开设置点【探测页面结构】。'));
+    }
+  }
+
+  async function probePage() {
+    try {
+      const p = await cdpEvaluate(
+        '(window.DTDom && window.DTDom.probe) ? window.DTDom.probe() : { error: "未注入" }'
+      );
+      log('INFO', 'structure probe: ' + JSON.stringify(p));
+      setHint(t('页面结构已写进下方日志。'));
+    } catch (e) {
+      setHint(t('探测失败：') + ((e && e.message) || e), true);
+    }
+  }
+
+  /* ---------------------------------------------------------------- */
   /* 启动                                                              */
   /* ---------------------------------------------------------------- */
 
@@ -1850,6 +1936,20 @@
       S.cfg = {};
     }
 
+    // 刚被自动更新过：把发布说明留到这次启动处理
+    try {
+      const notes = await invoke('take_update_notes');
+      if (notes) {
+        log('INFO', '更新完成，发布说明: ' + notes);
+        $('verDetail').textContent = t('已更新到 v{v}。', { v: S.appInfo.version });
+        if (S.cfg.openNotesAfterUpdate !== false) {
+          setTimeout(() => invoke('open_url', { url: notes }).catch(() => {}), 2500);
+        }
+      }
+    } catch (e) {
+      /* 标记文件读取失败不影响主流程 */
+    }
+
     // 启动后静默查一次更新（不抢焦点、不弹窗，发现问题只在卡片里提示）
     if (S.cfg && S.cfg.autoCheckUpdate !== false) {
       setTimeout(() => {
@@ -1883,6 +1983,12 @@
     listen('dt:toggle', () => {
       $('power').click();
     }).catch(() => {});
+
+    // 托盘菜单里的两项
+    listen('dt:check-update', () => checkUpdate(true)).catch(() => {});
+    listen('dt:rollback-failed', (e) =>
+      setHint(t('回滚失败：') + String((e && e.payload) || ''), true)
+    ).catch(() => {});
 
     // 首次"关窗口"时 Rust 侧会发这个事件
     listen('dt:tray-hint', () => {
