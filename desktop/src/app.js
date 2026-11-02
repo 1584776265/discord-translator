@@ -14,6 +14,9 @@
   const { invoke } = window.__TAURI__.core;
   const { listen } = window.__TAURI__.event;
 
+  // 双语：中文是原文，英文查 i18n.js 里的字典（见 i18n.js 顶部说明）
+  const t = (s, vars) => (window.DTI18n ? window.DTI18n.t(s, vars) : s);
+
   const BINDING = '__dtIpcSend';
   const POLL_MS = 2000;
 
@@ -42,7 +45,9 @@
     channelId: '',
     channelName: '',
     pollTimer: null,
-    logs: []
+    logs: [],
+    appInfo: { version: '', installed: false, lang: 'zh', proxy: '' },
+    updateInfo: null
   };
 
   let DOM_SRC = '';
@@ -241,7 +246,7 @@
   function cdpSend(method, params) {
     return new Promise((resolve, reject) => {
       if (!S.ws || S.ws.readyState !== WebSocket.OPEN) {
-        reject(new Error('CDP 未连接'));
+        reject(new Error(t('CDP 未连接')));
         return;
       }
       const id = ++S.msgId;
@@ -251,7 +256,7 @@
       setTimeout(() => {
         if (S.pending.has(id)) {
           S.pending.delete(id);
-          reject(new Error('CDP 超时: ' + method));
+          reject(new Error(t('CDP 超时: ') + method));
         }
       }, 30000);
     });
@@ -340,7 +345,7 @@
           window.${BINDING}(JSON.stringify({ id: id, texts: texts, settings: s }));
         } catch (e) {
           resolve(texts.map(function () {
-            return { ok: false, error: 'IPC 不可用: ' + e.message };
+            return { ok: false, error: t('IPC 不可用: ') + e.message };
           }));
         }
       });
@@ -450,7 +455,7 @@
     if (limit > 0 && S.usage.requests >= limit) {
       const blocked = msg.texts.map(() => ({
         ok: false,
-        error: `已达每日请求上限（${limit}）`
+        error: t('已达每日请求上限（{n}）', { n: limit })
       }));
       await cdpEvaluate(
         `window.__dtReply(${JSON.stringify(msg.id)}, ${JSON.stringify(blocked)})`
@@ -496,7 +501,7 @@
 
       for (let k = 0; k < todo.length; k++) {
         const i = todo[k];
-        const r = out[k] || { ok: false, error: '无结果' };
+        const r = out[k] || { ok: false, error: t('无结果') };
         results[i] = r;
         if (r.ok && r.text) {
           invoke('cache_put', {
@@ -518,7 +523,7 @@
     let lostTotal = 0;
 
     const final = results.map((r, i) => {
-      if (!r) return { ok: false, error: '无结果' };
+      if (!r) return { ok: false, error: t('无结果') };
       if (r.ok && r.text && !r.cached) {
         const out = restoreGlossary(r.text, prepared[i].map);
         lostTotal += out.lost;
@@ -532,22 +537,22 @@
       S.glossaryLostWarned = true;
       log(
         'WARN',
-        `${lostTotal} 个术语占位符被当前翻译引擎改写，术语表未生效。` +
-          '本地小模型（LibreTranslate）对术语表支持有限，建议改用腾讯 / DeepSeek / Ollama。'
+        t('{n} 个术语占位符被当前翻译引擎改写，术语表未生效。', { n: lostTotal }) +
+          t('本地小模型（LibreTranslate）对术语表支持有限，建议改用腾讯 / DeepSeek / Ollama。')
       );
-      setHint('当前翻译引擎不支持术语占位符，术语表未生效。建议换腾讯 / DeepSeek / Ollama。', true);
+      setHint(t('当前翻译引擎不支持术语占位符，术语表未生效。建议换腾讯 / DeepSeek / Ollama。'), true);
     }
 
     const bad = final.filter((r) => r && !r.ok).length;
     if (bad > 0) {
       const first = final.find((r) => r && r.error);
       S.lastError = first ? first.error : '';
-      log('WARN', `${bad}/${final.length} 条翻译失败: ${S.lastError}`);
+      log('WARN', t('{bad}/{total} 条翻译失败: {err}', { bad: bad, total: final.length, err: S.lastError }));
     }
 
     await cdpEvaluate(
       `window.__dtReply(${JSON.stringify(msg.id)}, ${JSON.stringify(final)})`
-    ).catch((e) => log('ERROR', '回填失败: ' + e.message));
+    ).catch((e) => log('ERROR', t('回填失败: ') + e.message));
   }
 
   /* ---------------------------------------------------------------- */
@@ -560,7 +565,7 @@
    */
   async function connect(userInitiated, internal) {
     if (S.connecting && !internal) {
-      log('WARN', '已有连接流程进行中，忽略本次请求');
+      log('WARN', t('已有连接流程进行中，忽略本次请求'));
       return;
     }
     S.connecting = true;
@@ -574,7 +579,7 @@
       S.port = (S.cfg && S.cfg.cdpPort) || st.port || 9223;
 
       if (!st.installed) {
-        setStatus('err', '未安装 Discord', '找不到 %LOCALAPPDATA%\\Discord');
+        setStatus('err', t('未安装 Discord'), t('找不到 %LOCALAPPDATA%\\Discord'));
         setHint('请先安装 Discord 桌面版。', true);
         return;
       }
@@ -585,23 +590,23 @@
       if (!st.portOpen) {
         if (!userInitiated) {
           // 启动时只做提示，绝不擅自启动或杀进程
-          setStatus('warn', '未连接', st.running ? 'Discord 未开启调试端口' : 'Discord 未运行');
+          setStatus('warn', t('未连接'), st.running ? t('Discord 未开启调试端口') : t('Discord 未运行'));
           setHint(
             st.running
-              ? 'Discord 正在运行但未开启翻译所需的调试端口。点上面按钮会重启 Discord——当前语音通话会中断，未发送的草稿会丢失。'
-              : 'Discord 没有运行。点击按钮会启动它并开启调试端口。'
+              ? t('Discord 正在运行但未开启翻译所需的调试端口。点上面按钮会重启 Discord——当前语音通话会中断，未发送的草稿会丢失。')
+              : t('Discord 没有运行。点击按钮会启动它并开启调试端口。')
           );
-          btn.textContent = st.running ? '重启 Discord 并连接' : '启动 Discord 并连接';
+          btn.textContent = st.running ? t('重启 Discord 并连接') : t('启动 Discord 并连接');
           return;
         }
 
-        setStatus('busy', '正在启动 Discord…', '首次启动约需 10–20 秒');
-        btn.textContent = '正在连接…';
-        log('INFO', '开始启动 Discord（会先关闭现有进程）');
+        setStatus('busy', t('正在启动 Discord…'), t('首次启动约需 10–20 秒'));
+        btn.textContent = t('正在连接…');
+        log('INFO', t('开始启动 Discord（会先关闭现有进程）'));
 
         const r = await invoke('start_discord', { port: S.port });
         S.port = r.port;
-        log('INFO', `Discord 就绪：端口 ${r.port}，方式 ${r.mode}，耗时 ${r.elapsedMs}ms`);
+        log('INFO', t('Discord 就绪：端口 {port}，方式 {mode}，耗时 {ms}ms', { port: r.port, mode: r.mode, ms: r.elapsedMs }));
 
         // 端口可能因被占用而顺延，写回配置，下次直接用对的
         if (S.cfg && r.port !== S.cfg.cdpPort) {
@@ -611,14 +616,14 @@
       }
 
       if (!S.cdpReady) {
-        setStatus('busy', '等待 Discord 页面…', '正在加载聊天界面');
+        setStatus('busy', t('等待 Discord 页面…'), t('正在加载聊天界面'));
       }
 
       const target = await findDiscordTarget(S.port, 24);
       if (!target) {
-        setStatus('err', '连接失败', 'Discord 页面未就绪');
+        setStatus('err', t('连接失败'), t('Discord 页面未就绪'));
         setHint('Discord 可能还在加载，稍等几秒再点一次。', true);
-        log('ERROR', '等待 Discord 页面超时');
+        log('ERROR', t('等待 Discord 页面超时'));
         return;
       }
 
@@ -631,21 +636,21 @@
         // 自动重启一次（只一次，避免无限循环）。
         if (!S.autoRestarted) {
           S.autoRestarted = true;
-          log('WARN', '握手被拒，重启 Discord 以开启调试权限');
-          setStatus('busy', '正在重启 Discord…', '需要重新授权调试连接');
+          log('WARN', t('握手被拒，重启 Discord 以开启调试权限'));
+          setStatus('busy', t('正在重启 Discord…'), t('需要重新授权调试连接'));
           S.connecting = false;
           return connect(true, true);
         }
         throw wsErr;
       }
     } catch (e) {
-      setStatus('err', '连接失败', String((e && e.message) || e));
+      setStatus('err', t('连接失败'), String((e && e.message) || e));
       setHint('连接出错：' + ((e && e.message) || e), true);
-      log('ERROR', '连接失败: ' + ((e && e.message) || e));
+      log('ERROR', t('连接失败: ') + ((e && e.message) || e));
     } finally {
       S.connecting = false;
       btn.disabled = false;
-      if (!S.cdpReady) btn.textContent = '连接 Discord';
+      if (!S.cdpReady) btn.textContent = t('连接 Discord');
     }
   }
 
@@ -671,7 +676,7 @@
           } catch (e) {
             /* ignore */
           }
-          reject(new Error('WebSocket 连接超时'));
+          reject(new Error(t('WebSocket 连接超时')));
         }
       }, 8000);
 
@@ -686,17 +691,17 @@
 
           S.cdpReady = true;
           S.autoRestarted = false;
-          setStatus('ok', '已连接', shortUrl(S.pageUrl));
-          $('subtitle').textContent = S.enabled ? '翻译已开启' : '翻译已暂停';
-          setHint('译文会显示在每条消息下方。关闭窗口后仍在托盘运行。');
-          $('btnConnect').textContent = '重新连接';
-          log('INFO', '已注入到 Discord: ' + S.pageUrl);
+          setStatus('ok', t('已连接'), shortUrl(S.pageUrl));
+          $('subtitle').textContent = S.enabled ? t('翻译已开启') : t('翻译已暂停');
+          setHint(t('译文会显示在每条消息下方。关闭窗口后仍在托盘运行。'));
+          $('btnConnect').textContent = t('重新连接');
+          log('INFO', t('已注入到 Discord: ') + S.pageUrl);
           startPolling();
           resolve();
         } catch (e) {
           S.cdpReady = false;
-          setStatus('err', '注入失败', String((e && e.message) || e));
-          log('ERROR', '注入失败: ' + ((e && e.message) || e));
+          setStatus('err', t('注入失败'), String((e && e.message) || e));
+          log('ERROR', t('注入失败: ') + ((e && e.message) || e));
           reject(e);
         }
       };
@@ -729,19 +734,19 @@
         }
 
         if (m.method === 'Runtime.executionContextsCleared') {
-          log('WARN', '检测到 Discord 页面重载，2 秒后重新注入');
+          log('WARN', t('检测到 Discord 页面重载，2 秒后重新注入'));
           setTimeout(async () => {
             try {
               await injectAll();
               cdpEvaluate('location.href').then((u) => {
                 if (u) {
                   S.pageUrl = u;
-                  setStatus('ok', '已连接', shortUrl(u));
+                  setStatus('ok', t('已连接'), shortUrl(u));
                 }
               });
-              log('INFO', '重新注入完成');
+              log('INFO', t('重新注入完成'));
             } catch (e) {
-              log('ERROR', '重新注入失败: ' + e.message);
+              log('ERROR', t('重新注入失败: ') + e.message);
             }
           }, 2000);
         }
@@ -752,9 +757,9 @@
         stopPolling();
         if (S.ws === ws) {
           S.ws = null;
-          setStatus('warn', '连接已断开', '正在尝试重连…');
-          $('btnConnect').textContent = '连接 Discord';
-          log('WARN', 'CDP 连接已断开');
+          setStatus('warn', t('连接已断开'), t('正在尝试重连…'));
+          $('btnConnect').textContent = t('连接 Discord');
+          log('WARN', t('CDP 连接已断开'));
           scheduleReconnect();
         }
       };
@@ -764,7 +769,7 @@
           clearTimeout(failTimer);
           reject(
             new Error(
-              '调试端口拒绝了本程序的连接。Discord 必须由本程序启动（需要 --remote-allow-origins），请点【重启 Discord 并连接】'
+              t('调试端口拒绝了本程序的连接。Discord 必须由本程序启动（需要 --remote-allow-origins），请点【重启 Discord 并连接】')
             )
           );
         }
@@ -776,8 +781,8 @@
     if (!u) return '';
     if (S.channelName) return S.channelName;
     const m = String(u).match(/\/channels\/(\d+)\/(\d+)/);
-    if (m) return `频道 ${m[2]}`;
-    if (String(u).indexOf('@me') >= 0) return '私信';
+    if (m) return t('频道 {name}', { name: m[2] });
+    if (String(u).indexOf('@me') >= 0) return t('私信');
     return String(u).slice(0, 48);
   }
 
@@ -823,11 +828,11 @@
 
       if (st.portOpen) {
         S.deadChecks = 0;
-        log('INFO', '自动重连：调试端口在线，尝试连接');
+        log('INFO', t('自动重连：调试端口在线，尝试连接'));
         await connect(false, true);
         if (S.cdpReady) {
           S.autoReconnect = false;
-          notify('翻译已恢复', '已重新连接到 Discord。');
+          notify(t('翻译已恢复'), t('已重新连接到 Discord。'));
           return;
         }
       } else if (st.running) {
@@ -835,15 +840,15 @@
         S.deadChecks++;
         if (S.deadChecks >= 3) {
           S.autoReconnect = false;
-          setStatus('warn', '需要重新连接', 'Discord 重启后未开启调试端口');
+          setStatus('warn', t('需要重新连接'), t('Discord 重启后未开启调试端口'));
           setHint('Discord 重新启动了，但没有调试端口。点【重启 Discord 并连接】恢复（语音会断）。');
-          notify('Discord 重启了，翻译已断开', 'Discord 重启后没有开启调试端口。打开本程序点【重启 Discord 并连接】即可恢复。');
-          log('WARN', 'Discord 重启且无调试端口，停止自动重连');
+          notify(t('Discord 重启了，翻译已断开'), t('Discord 重启后没有开启调试端口。打开本程序点【重启 Discord 并连接】即可恢复。'));
+          log('WARN', t('Discord 重启且无调试端口，停止自动重连'));
           return;
         }
       } else {
         // Discord 没在跑，继续等它起来
-        setStatus('warn', '等待 Discord', 'Discord 未运行');
+        setStatus('warn', t('等待 Discord'), t('Discord 未运行'));
       }
     } catch (e) {
       /* 忽略，下一轮再试 */
@@ -906,18 +911,18 @@
       };
       if (d.url && d.url !== S.pageUrl) {
         S.pageUrl = d.url;
-        setStatus('ok', '已连接', shortUrl(d.url));
+        setStatus('ok', t('已连接'), shortUrl(d.url));
       }
 
       const chId = d.channelId || '';
       if (chId !== S.channelId) {
         S.channelId = chId;
         S.channelName = d.channelName || '';
-        setStatus('ok', '已连接', S.channelName || shortUrl(d.url));
+        setStatus('ok', t('已连接'), S.channelName || shortUrl(d.url));
         updateChannelUI();
       } else if (d.channelName && d.channelName !== S.channelName) {
         S.channelName = d.channelName;
-        setStatus('ok', '已连接', S.channelName);
+        setStatus('ok', t('已连接'), S.channelName);
         updateChannelUI();
       }
 
@@ -925,13 +930,13 @@
       // 注入可能已经丢了，靠轮询发现并补回去。
       if (!d.injected && !S.reinjecting) {
         S.reinjecting = true;
-        log('WARN', '注入已丢失（页面路由切换），正在重新注入');
+        log('WARN', t('注入已丢失（页面路由切换），正在重新注入'));
         setTimeout(async () => {
           try {
             await injectAll();
-            log('INFO', '重新注入完成');
+            log('INFO', t('重新注入完成'));
           } catch (e) {
-            log('ERROR', '重新注入失败: ' + e.message);
+            log('ERROR', t('重新注入失败: ') + e.message);
           } finally {
             S.reinjecting = false;
           }
@@ -962,12 +967,12 @@
 
     const prov = (S.cfg && S.cfg.provider) || 'auto';
     const map = {
-      auto: '自动',
-      tencent: '腾讯',
+      auto: t('自动'),
+      tencent: t('腾讯'),
       google: 'Google',
-      caiyun: '彩云',
+      caiyun: t('彩云'),
       mymemory: 'MyMemory',
-      openai: '大模型',
+      openai: t('大模型'),
       libre: 'Libre'
     };
     $('mProvider').textContent = map[prov] || prov;
@@ -1005,23 +1010,23 @@
     const wl = S.cfg.channelWhitelist || [];
     const inList = has && wl.indexOf(S.channelId) >= 0;
 
-    $('chName').textContent = has ? S.channelName || S.channelId : '未在频道内';
+    $('chName').textContent = has ? S.channelName || S.channelId : t('未在频道内');
     $('btnCurOnly').disabled = !has;
     $('btnAddWhite').disabled = !has;
     $('btnRemoveWhite').disabled = !inList;
 
     const state = $('chState');
     if (!has) {
-      state.textContent = '打开一个文字频道后可以把它单独加入白名单。';
+      state.textContent = t('打开一个文字频道后可以把它单独加入白名单。');
       state.className = 'note';
     } else if (wl.length === 0) {
-      state.textContent = '白名单为空，当前所有频道都会翻译。';
+      state.textContent = t('白名单为空，当前所有频道都会翻译。');
       state.className = 'note';
     } else if (inList) {
-      state.textContent = `已在白名单中（共 ${wl.length} 个频道）。`;
+      state.textContent = t('已在白名单中（共 {n} 个频道）。', { n: wl.length });
       state.className = 'note';
     } else {
-      state.textContent = `当前频道不在白名单里，这个频道不会翻译（共 ${wl.length} 个频道在白名单）。`;
+      state.textContent = t('当前频道不在白名单里，这个频道不会翻译（共 {n} 个频道在白名单）。', { n: wl.length });
       state.className = 'note warn';
     }
   }
@@ -1035,9 +1040,10 @@
 
       // Docker daemon 没起来时读不到容器，这跟「没装」是两回事
       if (!info.dockerRunning) {
-        meta.textContent = 'Docker 未运行';
-        el.textContent =
-          'Docker Desktop 没有运行，读不到容器状态。启动 Docker 后这里会显示已装的语言包。';
+        meta.textContent = t('Docker 未运行');
+        el.textContent = t(
+          'Docker Desktop 没有运行，读不到容器状态。启动 Docker 后这里会显示已装的语言包。'
+        );
         $('btnUninstallLibre').disabled = true;
         return;
       }
@@ -1045,19 +1051,19 @@
       $('btnUninstallLibre').disabled = false;
 
       if (!info.installed) {
-        meta.textContent = '未部署';
-        el.textContent = '还没有部署。点下面的按钮会自动拉镜像、起容器并填好地址。';
-        $('btnDeployLibre').textContent = '部署 LibreTranslate';
+        meta.textContent = t('未部署');
+        el.textContent = t('还没有部署。点下面的按钮会自动拉镜像、起容器并填好地址。');
+        $('btnDeployLibre').textContent = t('部署 LibreTranslate');
         return;
       }
 
-      const langs = (info.languages || []).join(', ') || '未知';
-      meta.textContent = running ? '运行中' : '已停止';
+      const langs = (info.languages || []).join(', ') || t('未知');
+      meta.textContent = running ? t('运行中') : t('已停止');
       el.textContent =
-        `${info.models} 个语言包（${langs}）` +
-        (info.imageSize ? ` · 镜像 ${info.imageSize}` : '');
+        t('{n} 个语言包（{langs}）', { n: info.models, langs: langs }) +
+        (info.imageSize ? t(' · 镜像 {size}', { size: info.imageSize }) : '');
     } catch (e) {
-      meta.textContent = '读取失败';
+      meta.textContent = t('读取失败');
       el.textContent = String((e && e.message) || e);
     }
   }
@@ -1070,27 +1076,27 @@
       const info = await invoke('ollama_info');
 
       if (!info.installed) {
-        meta.textContent = '未安装';
-        el.textContent = '还没有安装。点下面的按钮会用 winget 自动安装并下载 qwen2.5:3b（约 2GB）。';
+        meta.textContent = t('未安装');
+        el.textContent = t('还没有安装。点下面的按钮会用 winget 自动安装并下载 qwen2.5:3b（约 2GB）。');
         return;
       }
 
       const models = info.models || [];
 
       if (!models.length) {
-        meta.textContent = '无模型';
-        el.textContent = 'Ollama 已安装，但没有已下载的模型。点下面的按钮下载 qwen2.5:3b（约 2GB）。';
+        meta.textContent = t('无模型');
+        el.textContent = t('Ollama 已安装，但没有已下载的模型。点下面的按钮下载 qwen2.5:3b（约 2GB）。');
         $('btnUninstallOllama').disabled = true;
         return;
       }
 
       $('btnUninstallOllama').disabled = false;
-      meta.textContent = running ? '运行中' : '已停止';
+      meta.textContent = running ? t('运行中') : t('已停止');
 
       const list = models.map((m) => `${m.name}（${m.size}）`).join('、');
-      el.textContent = `已装模型：${list}`;
+      el.textContent = t('已装模型：{list}', { list: list });
     } catch (e) {
-      meta.textContent = '读取失败';
+      meta.textContent = t('读取失败');
       el.textContent = String((e && e.message) || e);
     }
   }
@@ -1101,10 +1107,10 @@
       const on = !!s.takenOver;
       $('scDot').className = 'dot ' + (on ? 'ok' : '');
       $('scText').textContent = on
-        ? '已接管：点 Discord 图标会经本程序启动'
-        : '未接管：点 Discord 图标启动的客户端无法翻译';
+        ? t('已接管：点 Discord 图标会经本程序启动')
+        : t('未接管：点 Discord 图标启动的客户端无法翻译');
     } catch (e) {
-      $('scText').textContent = '读取快捷方式失败：' + ((e && e.message) || e);
+      $('scText').textContent = t('读取快捷方式失败：') + ((e && e.message) || e);
     }
   }
 
@@ -1112,13 +1118,13 @@
   async function renderProviderHealth() {
     const box = $('providerHealth');
     if (!box) return;
-    box.textContent = '检测中…';
+    box.textContent = t('检测中…');
 
     let list = [];
     try {
       list = await DTEngine.diagnose(translateSettings());
     } catch (e) {
-      box.textContent = '检测失败：' + ((e && e.message) || e);
+      box.textContent = t('检测失败：') + ((e && e.message) || e);
       return;
     }
 
@@ -1136,7 +1142,7 @@
 
       const meta = document.createElement('span');
       meta.className = 'health-meta';
-      meta.textContent = r.ok ? r.ms + 'ms' : r.error || '不可用';
+      meta.textContent = r.ok ? r.ms + 'ms' : r.error || t('不可用');
 
       row.appendChild(dot);
       row.appendChild(name);
@@ -1152,35 +1158,35 @@
   let deployPollTimer = null;
 
   async function refreshLocalEnv() {
-    $('eDocker').textContent = '检测中…';
-    $('eLibre').textContent = '检测中…';
-    $('eOllama').textContent = '检测中…';
+    $('eDocker').textContent = t('检测中…');
+    $('eLibre').textContent = t('检测中…');
+    $('eOllama').textContent = t('检测中…');
 
     try {
       const e = await invoke('local_engine_env');
 
       $('eDocker').textContent = e.docker
         ? e.dockerRunning
-          ? '已安装 · 运行中'
-          : '已安装 · 未启动'
-        : '未安装';
+          ? t('已安装 · 运行中')
+          : t('已安装 · 未启动')
+        : t('未安装');
 
-      $('eLibre').textContent = e.libreRunning ? '运行中（127.0.0.1:5000）' : '未运行';
-      $('eOllama').textContent = e.ollamaRunning ? '运行中（127.0.0.1:11434）' : '未运行';
+      $('eLibre').textContent = e.libreRunning ? t('运行中（127.0.0.1:5000）') : t('未运行');
+      $('eOllama').textContent = e.ollamaRunning ? t('运行中（127.0.0.1:11434）') : t('未运行');
 
       if (e.libreRunning) {
-        $('btnDeployLibre').textContent = '已部署（重新部署）';
+        $('btnDeployLibre').textContent = t('已部署（重新部署）');
       }
       if (e.ollamaRunning) {
-        $('btnDeployOllama').textContent = '已部署（重新部署）';
+        $('btnDeployOllama').textContent = t('已部署（重新部署）');
       }
 
       // 各自引擎的详细信息：已装语言 / 已装模型
       refreshLibreDetail(e.libreRunning);
       refreshOllamaDetail(e.ollamaRunning);
     } catch (err) {
-      $('eDocker').textContent = '检测失败';
-      log('ERROR', '检测本地引擎失败: ' + ((err && err.message) || err));
+      $('eDocker').textContent = t('检测失败');
+      log('ERROR', t('检测本地引擎失败: ') + ((err && err.message) || err));
     }
   }
 
@@ -1203,13 +1209,13 @@
           const isOllama = st.target === 'ollama';
 
           if (isOllama) {
-            $('btnDeployOllama').textContent = st.ok ? '已部署（重新部署）' : '部署 Ollama';
+            $('btnDeployOllama').textContent = st.ok ? t('已部署（重新部署）') : t('部署 Ollama');
           } else {
-            $('btnDeployLibre').textContent = st.ok ? '已部署（重新部署）' : '部署 LibreTranslate';
+            $('btnDeployLibre').textContent = st.ok ? t('已部署（重新部署）') : t('部署 LibreTranslate');
           }
 
-          setHint(st.ok ? '本地引擎已就绪。' : '部署未完成：' + st.message, !st.ok);
-          log(st.ok ? 'INFO' : 'ERROR', '本地引擎部署: ' + st.message);
+          setHint(st.ok ? t('本地引擎已就绪。') : t('部署未完成：') + st.message, !st.ok);
+          log(st.ok ? 'INFO' : 'ERROR', t('本地引擎部署: ') + st.message);
           refreshLocalEnv();
 
           if (st.ok) {
@@ -1247,7 +1253,7 @@
     if (!force && ++cacheTick % 5 !== 0) return;
     try {
       const r = await invoke('cache_stats');
-      $('dCache').textContent = r.count + ' 条';
+      $('dCache').textContent = r.count + t(' 条');
     } catch (e) {
       /* ignore */
     }
@@ -1258,15 +1264,15 @@
   /* ---------------------------------------------------------------- */
 
   const LANG_ORDER = [
-    ['zh-CN', '简体中文'],
-    ['zh-TW', '繁体中文'],
-    ['en', '英语'],
-    ['ja', '日语'],
-    ['ko', '韩语'],
-    ['ru', '俄语'],
-    ['fr', '法语'],
-    ['de', '德语'],
-    ['es', '西班牙语']
+    ['zh-CN', t('简体中文')],
+    ['zh-TW', t('繁体中文')],
+    ['en', t('英语')],
+    ['ja', t('日语')],
+    ['ko', t('韩语')],
+    ['ru', t('俄语')],
+    ['fr', t('法语')],
+    ['de', t('德语')],
+    ['es', t('西班牙语')]
   ];
 
   function fillLangs() {
@@ -1287,7 +1293,7 @@
     $('power').addEventListener('click', () => {
       S.enabled = !S.enabled;
       $('power').classList.toggle('on', S.enabled);
-      $('subtitle').textContent = S.enabled ? '翻译已开启' : '翻译已暂停';
+      $('subtitle').textContent = S.enabled ? t('翻译已开启') : t('翻译已暂停');
       if (S.cdpReady) {
         cdpEvaluate(
           `(function(){ if (window.__dtSetCfg) window.__dtSetCfg({ enabled: ${S.enabled} }); return true; })()`
@@ -1369,8 +1375,8 @@
     $('btnCurOnly').addEventListener('click', () => {
       if (!S.channelId) return;
       saveCfg({ channelWhitelist: [S.channelId] });
-      setHint(`现在只翻译「${S.channelName || S.channelId}」。`);
-      log('INFO', '白名单设为当前频道: ' + S.channelId);
+      setHint(t('现在只翻译「{name}」。', { name: S.channelName || S.channelId }));
+      log('INFO', t('白名单设为当前频道: ') + S.channelId);
       updateChannelUI();
     });
 
@@ -1379,7 +1385,7 @@
       const wl = (S.cfg.channelWhitelist || []).slice();
       if (wl.indexOf(S.channelId) < 0) wl.push(S.channelId);
       saveCfg({ channelWhitelist: wl });
-      setHint(`已加入白名单，共 ${wl.length} 个频道。`);
+      setHint(t('已加入白名单，共 {n} 个频道。', { n: wl.length }));
       updateChannelUI();
     });
 
@@ -1387,17 +1393,49 @@
       if (!S.channelId) return;
       const wl = (S.cfg.channelWhitelist || []).filter((x) => x !== S.channelId);
       saveCfg({ channelWhitelist: wl });
-      setHint(wl.length === 0 ? '白名单已清空，所有频道都会翻译。' : `已移出白名单，剩 ${wl.length} 个。`);
+      setHint(
+        wl.length === 0
+          ? t('白名单已清空，所有频道都会翻译。')
+          : t('已移出白名单，剩 {n} 个。', { n: wl.length })
+      );
       updateChannelUI();
     });
 
     $('btnRefreshEnv').addEventListener('click', refreshLocalEnv);
 
+    $('btnCheckUpdate').addEventListener('click', () => checkUpdate(true));
+
+    $('btnInstallUpdate').addEventListener('click', installUpdate);
+
+    $('btnOpenRelease').addEventListener('click', () => {
+      const url =
+        (S.updateInfo && S.updateInfo.htmlUrl) ||
+        'https://github.com/1584776265/discord-translator/releases/latest';
+      invoke('open_url', { url }).catch((e) =>
+        setHint(t('更新失败：') + ((e && e.message) || e), true)
+      );
+    });
+
+    $('autoCheckUpdate').addEventListener('change', (e) =>
+      saveCfg({ autoCheckUpdate: e.target.checked })
+    );
+
+    $('updateProxy').addEventListener('change', (e) =>
+      saveCfg({ updateProxy: e.target.value.trim() })
+    );
+
+    // 换语言：Rust 侧在 save_config 里已同步，这里整页重载最省事，
+    // 免得把几千条动态文案逐个重刷（状态行、引擎面板都是即时算出来的）
+    $('language').addEventListener('change', async (e) => {
+      await saveCfg({ language: e.target.value });
+      window.location.reload();
+    });
+
     $('btnUninstallLibre').addEventListener('click', async () => {
       const ok = confirm(
-        '卸载 LibreTranslate？\n\n' +
-          '会删除容器和镜像（约 1GB 磁盘）。\n' +
-          'Docker Desktop 本体不会被卸载，其他容器也不受影响。'
+        t('卸载 LibreTranslate？\n\n') +
+          t('会删除容器和镜像（约 1GB 磁盘）。\n') +
+          t('Docker Desktop 本体不会被卸载，其他容器也不受影响。')
       );
       if (!ok) return;
 
@@ -1409,7 +1447,7 @@
         await refreshLocalEnv();
       } catch (e) {
         setHint('卸载失败：' + ((e && e.message) || e), true);
-        log('ERROR', '卸载 LibreTranslate 失败: ' + ((e && e.message) || e));
+        log('ERROR', t('卸载 LibreTranslate 失败: ') + ((e && e.message) || e));
       }
     });
 
@@ -1433,9 +1471,9 @@
       const target = models.find((m) => m.name === wanted) || models[0];
 
       const ok = confirm(
-        `删除模型 ${target.name}（${target.size}）？\n\n` +
-          '只删除模型文件，Ollama 程序本身保留。\n' +
-          '删掉后【部署 Ollama】需要重新下载约 2GB。'
+        t('删除模型 {name}（{size}）？\n\n', { name: target.name, size: target.size }) +
+          t('只删除模型文件，Ollama 程序本身保留。\n') +
+          t('删掉后【部署 Ollama】需要重新下载约 2GB。')
       );
       if (!ok) return;
 
@@ -1450,7 +1488,7 @@
         // 删掉的正是当前在用的模型：不切走的话接下来每条都会失败
         if (inUse) {
           await saveCfg({ provider: 'auto' });
-          setHint(msg + '。当前翻译源已切回「自动」。');
+          setHint(msg + t('。当前翻译源已切回「自动」。'));
         } else {
           setHint(msg);
         }
@@ -1464,7 +1502,7 @@
     $('btnDeployOllama').addEventListener('click', async () => {
       const btn = $('btnDeployOllama');
       btn.disabled = true;
-      $('deployMsg').textContent = '正在准备部署 Ollama…';
+      $('deployMsg').textContent = t('正在准备部署 Ollama…');
       setHint('');
       try {
         await invoke('local_engine_deploy_ollama');
@@ -1478,7 +1516,7 @@
     $('btnDeployLibre').addEventListener('click', async () => {
       const btn = $('btnDeployLibre');
       btn.disabled = true;
-      $('deployMsg').textContent = '正在准备部署…';
+      $('deployMsg').textContent = t('正在准备部署…');
       setHint('');
       try {
         await invoke('local_engine_deploy');
@@ -1497,14 +1535,14 @@
     $('channel').addEventListener('change', (e) => {
       const label = e.target.selectedOptions[0].textContent;
       saveCfg({ channel: e.target.value });
-      setHint(`已切换为 ${label}，重新连接后生效。`);
-      log('INFO', 'Discord 渠道切换为 ' + e.target.value);
+      setHint(t('已切换为 {label}，重新连接后生效。', { label: label }));
+      log('INFO', t('Discord 渠道切换为 ') + e.target.value);
     });
 
     $('btnPruneCache').addEventListener('click', async () => {
       try {
         const r = await invoke('prune_cache', { days: 7 });
-        setHint(`已清理 7 天前的缓存，剩余 ${r.remaining} 条。`);
+        setHint(t('已清理 7 天前的缓存，剩余 {n} 条。', { n: r.remaining }));
         refreshCacheStat(true);
       } catch (e) {
         setHint('清理失败：' + e.message, true);
@@ -1527,25 +1565,28 @@
       $('glossary').value = cur.map((g) => `${g.from}=${g.to}`).join('\n');
       setHint(
         added > 0
-          ? `已添加 ${added} 条推荐术语（共 ${cur.length} 条），对本地小模型效果最明显。`
-          : '推荐术语已经全部存在了。'
+          ? t('已添加 {n} 条推荐术语（共 {total} 条），对本地小模型效果最明显。', {
+            n: added,
+            total: cur.length
+          })
+          : t('推荐术语已经全部存在了。')
       );
-      log('INFO', `加载推荐术语表，新增 ${added} 条`);
+      log('INFO', t('加载推荐术语表，新增 {n} 条', { n: added }));
     });
 
     $('btnImportGlossary').addEventListener('click', async () => {
       try {
         const path = await window.__TAURI__.dialog.open({
-          title: '导入术语表',
+          title: t('导入术语表'),
           multiple: false,
-          filters: [{ name: '文本文件', extensions: ['txt'] }]
+          filters: [{ name: t('文本文件'), extensions: ['txt'] }]
         });
         if (!path) return;
 
         const list = await invoke('import_glossary', { path });
         await saveCfg({ glossary: list });
         $('glossary').value = list.map((g) => `${g.from}=${g.to}`).join('\n');
-        setHint(`已导入 ${list.length} 条术语。`);
+        setHint(t('已导入 {n} 条术语。', { n: list.length }));
       } catch (e) {
         setHint('导入失败：' + ((e && e.message) || e), true);
       }
@@ -1554,14 +1595,14 @@
     $('btnExportGlossary').addEventListener('click', async () => {
       try {
         const path = await window.__TAURI__.dialog.save({
-          title: '导出术语表',
+          title: t('导出术语表'),
           defaultPath: 'discord-translator-glossary.txt',
-          filters: [{ name: '文本文件', extensions: ['txt'] }]
+          filters: [{ name: t('文本文件'), extensions: ['txt'] }]
         });
         if (!path) return;
 
         const n = await invoke('export_glossary', { cfg: S.cfg, path });
-        setHint(`已导出 ${n} 条术语。`);
+        setHint(t('已导出 {n} 条术语。', { n: n }));
       } catch (e) {
         setHint('导出失败：' + ((e && e.message) || e), true);
       }
@@ -1583,20 +1624,20 @@
     $('btnTakeover').addEventListener('click', async () => {
       try {
         const r = await invoke('takeover_shortcut');
-        setHint(`已接管 ${r.count} 个快捷方式，现在点 Discord 图标即可带翻译启动。`);
-        log('INFO', `接管快捷方式 ${r.count} 个`);
+        setHint(t('已接管 {n} 个快捷方式，现在点 Discord 图标即可带翻译启动。', { n: r.count }));
+        log('INFO', t('接管快捷方式 {n} 个', { n: r.count }));
         await refreshShortcut();
       } catch (e) {
         setHint('接管失败：' + e.message, true);
-        log('ERROR', '接管快捷方式失败: ' + e.message);
+        log('ERROR', t('接管快捷方式失败: ') + e.message);
       }
     });
 
     $('btnRestore').addEventListener('click', async () => {
       try {
         const r = await invoke('restore_shortcut');
-        setHint(`已还原 ${r.count} 个快捷方式。`);
-        log('INFO', `还原快捷方式 ${r.count} 个`);
+        setHint(t('已还原 {n} 个快捷方式。', { n: r.count }));
+        log('INFO', t('还原快捷方式 {n} 个', { n: r.count }));
         await refreshShortcut();
       } catch (e) {
         setHint('还原失败：' + e.message, true);
@@ -1606,18 +1647,24 @@
     $('btnTest').addEventListener('click', async (e) => {
       const btn = e.currentTarget;
       btn.disabled = true;
-      btn.textContent = '测试中…';
+      btn.textContent = t('测试中…');
       try {
         const r = await DTEngine.test(translateSettings());
-        if (r.ok) setHint(`翻译源正常 · [${r.provider}] ${r.ms}ms → ${r.text}`);
-        else setHint('测试失败：' + (r.error || '无返回'), true);
-        log(r.ok ? 'INFO' : 'ERROR', `测试翻译源: ${r.ok ? 'OK ' + r.ms + 'ms' : r.error}`);
+        if (r.ok)
+      setHint(
+        t('翻译源正常 · [{provider}] {ms}ms → {text}', { provider: r.provider, ms: r.ms, text: r.text })
+      );
+        else setHint('测试失败：' + (r.error || t('无返回')), true);
+        log(
+      r.ok ? 'INFO' : 'ERROR',
+      t('测试翻译源: {text}', { text: r.ok ? 'OK ' + r.ms + 'ms' : r.error })
+    );
         renderProviderHealth();
       } catch (err) {
         setHint('测试失败：' + err.message, true);
       } finally {
         btn.disabled = false;
-        btn.textContent = '测试翻译源';
+        btn.textContent = t('测试翻译源');
       }
     });
   }
@@ -1668,10 +1715,99 @@
     $('outgoingLang').value = c.outgoingLang || 'en';
     $('theme').value = c.theme || 'system';
     $('channel').value = c.channel || 'stable';
+    $('language').value = c.language || 'auto';
+    $('autoCheckUpdate').checked = c.autoCheckUpdate !== false;
+    $('updateProxy').value = c.updateProxy || '';
     $('autostart').checked = !!c.autostart;
     applyTheme();
     $('dPort').textContent = String(c.cdpPort || 9223);
     $('dNet').textContent = DTEngine.networkInfo();
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* 语言与自动更新                                                    */
+  /* ---------------------------------------------------------------- */
+
+  async function applyLanguage() {
+    try {
+      S.appInfo = await invoke('app_info');
+    } catch (e) {
+      return;
+    }
+
+    if (window.DTI18n) {
+      window.DTI18n.setLang(S.appInfo.lang);
+      window.DTI18n.applyStatic();
+    }
+
+    $('verText').textContent = 'v' + (S.appInfo.version || '?');
+    $('verMode').textContent = S.appInfo.installed ? t('安装版') : t('便携版');
+    $('verDetail').textContent = S.appInfo.installed
+      ? t('安装版：下载校验后静默升级，配置与术语表自动保留。')
+      : t('便携版：只提示新版本，需要手动替换 exe。');
+  }
+
+  async function checkUpdate(manual) {
+    const btn = $('btnCheckUpdate');
+    if (manual) {
+      btn.disabled = true;
+      btn.textContent = t('正在检查…');
+    }
+
+    $('btnInstallUpdate').hidden = true;
+    $('btnOpenRelease').hidden = true;
+
+    try {
+      const info = await invoke('update_check');
+      S.updateInfo = info;
+
+      if (!info.hasUpdate) {
+        $('verText').textContent = 'v' + info.currentVersion;
+        $('verMode').textContent = t('已是最新版本');
+        if (manual) setHint(t('已是最新版本'));
+        return;
+      }
+
+      $('verText').textContent = 'v' + info.currentVersion + ' → v' + info.latestVersion;
+      $('verMode').textContent = t('有新版本 {v}', { v: info.latestVersion });
+
+      if (info.autoInstall) {
+        $('btnInstallUpdate').hidden = false;
+        if (manual) setHint(t('有新版本 {v}', { v: info.latestVersion }));
+      } else {
+        $('btnOpenRelease').hidden = false;
+        if (manual) setHint(t('便携版请到发布页手动下载新版。'));
+      }
+
+      log('INFO', `update available: ${info.currentVersion} -> ${info.latestVersion}`);
+    } catch (e) {
+      const msg = String((e && e.message) || e);
+      $('verMode').textContent = msg;
+      if (manual) setHint(msg, true);
+      log('WARN', 'update check failed: ' + msg);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = t('检查更新');
+    }
+  }
+
+  async function installUpdate() {
+    const btn = $('btnInstallUpdate');
+    btn.disabled = true;
+    btn.textContent = t('正在下载更新…');
+    setHint(t('正在下载并校验') + '…');
+
+    try {
+      const msg = await invoke('update_install');
+      setHint(msg);
+      log('INFO', msg);
+      btn.textContent = t('更新已开始，程序即将重启');
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = t('下载并安装');
+      setHint(t('更新失败：') + ((e && e.message) || e), true);
+      log('ERROR', 'update install failed: ' + ((e && e.message) || e));
+    }
   }
 
   /* ---------------------------------------------------------------- */
@@ -1681,7 +1817,7 @@
   async function loadSources() {
     const read = async (p) => {
       const r = await fetch(p);
-      if (!r.ok) throw new Error(`读取 ${p} 失败`);
+      if (!r.ok) throw new Error(t('读取 {name} 失败', { name: p }));
       return r.text();
     };
     ENGINE_SRC = await read('engine.js');
@@ -1698,19 +1834,27 @@
     try {
       await loadSources();
     } catch (e) {
-      setStatus('err', '初始化失败', e.message);
-      log('ERROR', '加载资源失败: ' + e.message);
+      setStatus('err', t('初始化失败'), e.message);
+      log('ERROR', t('加载资源失败: ') + e.message);
       return;
     }
 
     try {
       S.cfg = await invoke('get_config');
       applyCfgToUI();
+      await applyLanguage();
       updateChannelUI();
       $('dConfig').textContent = await invoke('config_path');
     } catch (e) {
-      log('ERROR', '读取配置失败: ' + e.message);
+      log('ERROR', t('读取配置失败: ') + e.message);
       S.cfg = {};
+    }
+
+    // 启动后静默查一次更新（不抢焦点、不弹窗，发现问题只在卡片里提示）
+    if (S.cfg && S.cfg.autoCheckUpdate !== false) {
+      setTimeout(() => {
+        if (!S.updateInfo) checkUpdate(false);
+      }, 8000);
     }
 
     await refreshUsage();
@@ -1721,18 +1865,18 @@
     if (st) {
       $('dPort').textContent = String(st.port);
       if (st.portOpen) {
-        setStatus('busy', '正在连接…', '');
-        $('subtitle').textContent = '检测到 Discord 已就绪';
+        setStatus('busy', t('正在连接…'), '');
+        $('subtitle').textContent = t('检测到 Discord 已就绪');
         connect(false);
       } else if (st.running) {
-        setStatus('warn', 'Discord 正在运行', '但未开启调试端口');
-        $('subtitle').textContent = '需要重启 Discord 才能连接';
+        setStatus('warn', t('Discord 正在运行'), t('但未开启调试端口'));
+        $('subtitle').textContent = t('需要重启 Discord 才能连接');
         setHint('Discord 已在运行但没开调试端口。点【重启 Discord 并连接】——语音会断，草稿会丢。');
-        $('btnConnect').textContent = '重启 Discord 并连接';
+        $('btnConnect').textContent = t('重启 Discord 并连接');
       } else {
-        setStatus('', '未连接', '');
-        $('subtitle').textContent = 'Discord 未运行';
-        $('btnConnect').textContent = '启动 Discord 并连接';
+        setStatus('', t('未连接'), '');
+        $('subtitle').textContent = t('Discord 未运行');
+        $('btnConnect').textContent = t('启动 Discord 并连接');
       }
     }
 
@@ -1742,8 +1886,8 @@
 
     // 首次"关窗口"时 Rust 侧会发这个事件
     listen('dt:tray-hint', () => {
-      notify('已最小化到托盘', '翻译仍在后台运行。右键托盘图标可以退出。');
-      log('INFO', '首次关闭窗口，已提示最小化到托盘');
+      notify(t('已最小化到托盘'), t('翻译仍在后台运行。右键托盘图标可以退出。'));
+      log('INFO', t('首次关闭窗口，已提示最小化到托盘'));
     }).catch(() => {});
 
     // 托盘"退出"前，先把注入到 Discord 的译文清掉，避免留下僵尸译文
@@ -1760,14 +1904,17 @@
             return true;
           })()
         `);
-        log('INFO', '退出前已清理页面上的译文');
+        log('INFO', t('退出前已清理页面上的译文'));
       } catch (e) {
         /* ignore */
       }
     }).catch(() => {});
 
+    // 前面的连接流程会改按钮与状态文案，末尾补扫一遍，兜住漏翻的静态文本
+    if (window.DTI18n) window.DTI18n.applyStatic();
+
     setInterval(() => {
-      $('dCdp').textContent = S.cdpReady ? '已连接' : '未连接';
+      $('dCdp').textContent = S.cdpReady ? t('已连接') : t('未连接');
       $('dUrl').textContent = S.pageUrl || '-';
       $('dUrl').title = S.pageUrl || '';
     }, 1500);

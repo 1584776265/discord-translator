@@ -7,6 +7,7 @@
 //! 之前用 `powershell -Command ...` 改 .lnk，即使加了 CREATE_NO_WINDOW，
 //! 在部分机器上仍会闪一下黑窗，应用一启动就能看到，观感很差。
 
+use crate::i18n;
 use std::path::{Path, PathBuf};
 
 use windows::core::{Interface, HSTRING, PCWSTR};
@@ -99,21 +100,21 @@ pub fn read_target(path: &Path) -> Option<String> {
 
 fn write_target(path: &Path, target: &str) -> Result<(), String> {
     unsafe {
-        let link = open_link().ok_or("无法创建 ShellLink 对象")?;
-        let persist: IPersistFile = link.cast().map_err(|e| format!("cast 失败: {}", e))?;
+        let link = open_link().ok_or(i18n::t("无法创建 ShellLink 对象", "Cannot create a ShellLink object"))?;
+        let persist: IPersistFile = link.cast().map_err(|e| i18n::t(&format!("cast 失败: {}", e), &format!("cast failed: {}", e)))?;
 
         let file = HSTRING::from(path.to_string_lossy().to_string());
         persist
             .Load(PCWSTR(file.as_ptr()), STGM_READWRITE)
-            .map_err(|e| format!("打开快捷方式失败: {}", e))?;
+            .map_err(|e| i18n::t(&format!("打开快捷方式失败: {}", e), &format!("Cannot open the shortcut: {}", e)))?;
 
         let value = HSTRING::from(target);
         link.SetPath(PCWSTR(value.as_ptr()))
-            .map_err(|e| format!("设置目标失败: {}", e))?;
+            .map_err(|e| i18n::t(&format!("设置目标失败: {}", e), &format!("Cannot set the target: {}", e)))?;
 
         persist
             .Save(PCWSTR(file.as_ptr()), true)
-            .map_err(|e| format!("保存快捷方式失败: {}", e))?;
+            .map_err(|e| i18n::t(&format!("保存快捷方式失败: {}", e), &format!("Cannot save the shortcut: {}", e)))?;
 
         Ok(())
     }
@@ -183,7 +184,10 @@ pub fn takeover() -> Result<usize, String> {
 
     let list = targets();
     if list.is_empty() {
-        return Err("没找到 Discord 的快捷方式（桌面和开始菜单都没有）".into());
+        return Err(i18n::t(
+            "没找到 Discord 的快捷方式（桌面和开始菜单都没有）",
+            "No Discord shortcut found (neither on the desktop nor in the Start menu)",
+        ));
     }
 
     let mut backup = load_backup();
@@ -215,7 +219,10 @@ pub fn takeover() -> Result<usize, String> {
 pub fn restore() -> Result<usize, String> {
     let backup = load_backup();
     if backup.is_empty() {
-        return Err("没有找到快捷方式备份，可能从未接管过".into());
+        return Err(i18n::t(
+            "没有找到快捷方式备份，可能从未接管过",
+            "No shortcut backup found — the shortcut was probably never hooked",
+        ));
     }
 
     let mut count = 0;

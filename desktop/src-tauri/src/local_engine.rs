@@ -10,6 +10,7 @@
 //!   - 有 Ollama  → 直接建议用 openai 兼容模式接本地模型
 //!   - 什么都没有 → 给出明确的安装指引，不静默失败
 
+use crate::i18n;
 use std::net::{SocketAddr, TcpStream};
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
@@ -252,7 +253,7 @@ pub fn start_deploy() {
             running: true,
             target: "libre".into(),
             phase: "prepare".into(),
-            message: "检查环境…".into(),
+            message: i18n::t("检查环境…", "Checking the environment…"),
             done: false,
             ok: false,
         };
@@ -300,7 +301,10 @@ pub fn start_deploy() {
 
         set_state(|s| {
             s.phase = "pull".into();
-            s.message = "正在拉取镜像（首次约 1GB，慢的话 10 分钟以上）…".into();
+            s.message = i18n::t(
+                "正在拉取镜像（首次约 1GB，慢的话 10 分钟以上）…",
+                "Pulling the image (about 1 GB the first time, up to 10 minutes)…",
+            );
         });
         crate::logging::write("INFO", "开始拉取 libretranslate 镜像");
 
@@ -328,7 +332,7 @@ pub fn start_deploy() {
 
         set_state(|s| {
             s.phase = "start".into();
-            s.message = "镜像就绪，正在启动容器…".into();
+            s.message = i18n::t("镜像就绪，正在启动容器…", "Image ready, starting the container…");
         });
 
         // 已经存在同名容器就先删掉，避免端口冲突
@@ -373,7 +377,10 @@ pub fn start_deploy() {
 
         set_state(|s| {
             s.phase = "wait".into();
-            s.message = "容器已启动，正在下载语言模型（中英日韩俄，首次约 3~8 分钟）…".into();
+            s.message = i18n::t(
+                "容器已启动，正在下载语言模型（中英日韩俄，首次约 3~8 分钟）…",
+                "Container started, downloading language packs (en/zh/ja/ko/ru, 3–8 minutes the first time)…",
+            );
         });
 
         // 下载模型 + 加载，给足 12 分钟
@@ -396,12 +403,21 @@ pub fn start_deploy() {
 
                 set_state(|s| {
                     s.message = if count > 0 {
-                        format!(
-                            "正在下载语言模型… 已完成 {} 个（已等 {} 秒，首次最长约 12 分钟）",
-                            count, waited
+                        i18n::t(
+                            &format!(
+                                "正在下载语言模型… 已完成 {} 个（已等 {} 秒，首次最长约 12 分钟）",
+                                count, waited
+                            ),
+                            &format!(
+                                "Downloading language packs… {} done (waited {}s, up to 12 minutes the first time)",
+                                count, waited
+                            ),
                         )
                     } else {
-                        format!("正在启动容器并准备下载模型…（已等 {} 秒）", waited)
+                        i18n::t(
+                            &format!("正在启动容器并准备下载模型…（已等 {} 秒）", waited),
+                            &format!("Starting the container and preparing the download… ({}s)", waited),
+                        )
                     };
                 });
             }
@@ -530,7 +546,7 @@ pub fn start_deploy_ollama() {
             running: true,
             target: "ollama".into(),
             phase: "prepare".into(),
-            message: "检查 Ollama…".into(),
+            message: i18n::t("检查 Ollama…", "Checking Ollama…"),
             done: false,
             ok: false,
         };
@@ -546,7 +562,10 @@ fn deploy_ollama() {
     if exe.is_none() {
         set_state(|s| {
             s.phase = "install".into();
-            s.message = "未检测到 Ollama，正在尝试用 winget 安装…".into();
+            s.message = i18n::t(
+                "未检测到 Ollama，正在尝试用 winget 安装…",
+                "Ollama not found — installing it with winget…",
+            );
         });
 
         if run_quiet("winget", &["--version"]).is_none() {
@@ -612,10 +631,17 @@ fn deploy_ollama() {
             let got_exe = find_ollama().is_some();
 
             set_state(|s| {
-                s.message = format!(
-                    "正在用 winget 安装 Ollama…已等 {} 秒{}（安装包约 700MB，通常 1~3 分钟）",
-                    waited,
-                    if got_exe { "，文件已就位" } else { "" }
+                s.message = i18n::t(
+                    &format!(
+                        "正在用 winget 安装 Ollama…已等 {} 秒{}（安装包约 700MB，通常 1~3 分钟）",
+                        waited,
+                        if got_exe { "，文件已就位" } else { "" }
+                    ),
+                    &format!(
+                        "Installing Ollama with winget… {}s elapsed{} (about 700 MB, usually 1–3 minutes)",
+                        waited,
+                        if got_exe { ", files are in place" } else { "" }
+                    ),
                 );
             });
         }
@@ -662,7 +688,7 @@ fn deploy_ollama() {
     if !port_open(OLLAMA_PORT) {
         set_state(|s| {
             s.phase = "serve".into();
-            s.message = "正在启动 Ollama 服务…".into();
+            s.message = i18n::t("正在启动 Ollama 服务…", "Starting the Ollama service…");
         });
 
         let mut cmd = Command::new(&ollama);
@@ -701,14 +727,26 @@ fn deploy_ollama() {
     set_state(|s| {
         s.phase = "pull".into();
         s.message = if already_ok {
-            format!("模型 {} 已存在，正在校验完整性…", OLLAMA_MODEL)
+            i18n::t(
+                &format!("模型 {} 已存在，正在校验完整性…", OLLAMA_MODEL),
+                &format!("Model {} is already present — verifying…", OLLAMA_MODEL),
+            )
         } else if leftover > 200 * 1024 * 1024 {
-            format!(
-                "检测到上次未完成的下载（已有 {:.0} MB），正在续传…",
-                leftover as f64 / 1_048_576.0
+            i18n::t(
+                &format!(
+                    "检测到上次未完成的下载（已有 {:.0} MB），正在续传…",
+                    leftover as f64 / 1_048_576.0
+                ),
+                &format!(
+                    "Resuming an unfinished download ({:.0} MB already on disk)…",
+                    leftover as f64 / 1_048_576.0
+                ),
             )
         } else {
-            format!("正在拉取模型 {}（约 2GB）…", OLLAMA_MODEL)
+            i18n::t(
+                &format!("正在拉取模型 {}（约 2GB）…", OLLAMA_MODEL),
+                &format!("Pulling model {} (~2 GB)…", OLLAMA_MODEL),
+            )
         };
     });
     crate::logging::write("INFO", &format!("开始拉取 Ollama 模型 {}", OLLAMA_MODEL));
@@ -773,23 +811,43 @@ fn deploy_ollama() {
         set_state(|s| {
             s.message = if size > 0 {
                 if speed > 0.05 {
-                    format!(
-                        "正在下载模型… {:.0}%（{:.0} / 1900 MB，{:.1} MB/s），已等 {} 秒",
-                        pct,
-                        size as f64 / 1_048_576.0,
-                        speed,
-                        waited
+                    i18n::t(
+                        &format!(
+                            "正在下载模型… {:.0}%（{:.0} / 1900 MB，{:.1} MB/s），已等 {} 秒",
+                            pct,
+                            size as f64 / 1_048_576.0,
+                            speed,
+                            waited
+                        ),
+                        &format!(
+                            "Downloading the model… {:.0}% ({:.0} / 1900 MB, {:.1} MB/s), {}s elapsed",
+                            pct,
+                            size as f64 / 1_048_576.0,
+                            speed,
+                            waited
+                        ),
                     )
                 } else {
-                    format!(
-                        "正在下载模型… {:.0}%（{:.0} / 1900 MB，速度 0，可能卡住了），已等 {} 秒",
-                        pct,
-                        size as f64 / 1_048_576.0,
-                        waited
+                    i18n::t(
+                        &format!(
+                            "正在下载模型… {:.0}%（{:.0} / 1900 MB，速度 0，可能卡住了），已等 {} 秒",
+                            pct,
+                            size as f64 / 1_048_576.0,
+                            waited
+                        ),
+                        &format!(
+                            "Downloading the model… {:.0}% ({:.0} / 1900 MB, stalled), {}s elapsed",
+                            pct,
+                            size as f64 / 1_048_576.0,
+                            waited
+                        ),
                     )
                 }
             } else {
-                format!("正在连接模型仓库…已等 {} 秒", waited)
+                i18n::t(
+                    &format!("正在连接模型仓库…已等 {} 秒", waited),
+                    &format!("Connecting to the model registry… {}s elapsed", waited),
+                )
             };
         });
     }

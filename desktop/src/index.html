@@ -135,7 +135,7 @@
 
     <section class="card">
       <h2>本地翻译引擎</h2>
-      <p class="note">
+      <p class="note" data-i18n="note.localEngine">
         让翻译完全跑在自己机器上：不联网、不花钱、没有额度限制。需要 Docker（约 600MB，镜像约 1GB）。
         没有 Docker 也可以直接用 Ollama 接大模型。
       </p>
@@ -197,6 +197,36 @@
           </select>
         </div>
       </div>
+      <div class="field">
+        <label for="language">界面语言</label>
+        <select id="language">
+          <option value="auto">自动（跟随系统）</option>
+          <option value="zh">中文</option>
+          <option value="en">English</option>
+        </select>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>版本更新</h2>
+      <div class="status-row compact">
+        <span class="status-text small" id="verText">当前版本 -</span>
+        <span class="status-detail" id="verMode"></span>
+      </div>
+      <p class="engine-desc" id="verDetail">安装版：下载校验后静默升级，配置与术语表自动保留。</p>
+      <div class="actions">
+        <button id="btnCheckUpdate" class="btn small grow">检查更新</button>
+        <button id="btnInstallUpdate" class="btn small primary" hidden>下载并安装</button>
+        <button id="btnOpenRelease" class="btn small" hidden>打开下载页</button>
+      </div>
+      <label class="check">
+        <input type="checkbox" id="autoCheckUpdate" />
+        <span>启动时自动检查更新</span>
+      </label>
+      <div class="field">
+        <label for="updateProxy">更新用代理（留空 = 用系统代理，填 direct 直连）</label>
+        <input type="text" id="updateProxy" placeholder="127.0.0.1:7897" spellcheck="false" />
+      </div>
     </section>
 
     <section class="card">
@@ -212,7 +242,7 @@
 
     <section class="card">
       <h2>发送前翻译</h2>
-      <p class="note">
+      <p class="note" data-i18n="note.composer">
         在 Discord 输入框里按 <code>Alt + Enter</code>，把你要说的话翻成目标语言并替换输入框内容，
         不会自动发出去（除非你打开下面的开关）。
       </p>
@@ -232,7 +262,7 @@
 
     <section class="card">
       <h2>Discord 图标</h2>
-      <p class="note">
+      <p class="note" data-i18n="note.discordIcon">
         默认情况下，直接双击 Discord 图标启动的客户端<b>没有</b>调试端口，翻译不会工作。接管后会由本程序转发启动，
         点原来的图标即可正常翻译。
       </p>
@@ -250,21 +280,21 @@
       <summary>范围与术语</summary>
 
       <div class="field">
-        <label for="whitelist">频道白名单（留空 = 全部翻译）</label>
+        <label for="whitelist" data-i18n="label.whitelist">频道白名单（留空 = 全部翻译）</label>
         <textarea id="whitelist" rows="3" placeholder="每行一个频道 ID，例如&#10;1545652267883962419"></textarea>
       </div>
 
       <div class="field">
-        <label for="userBlacklist">忽略这些用户（每行一个用户名或 ID）</label>
+        <label for="userBlacklist" data-i18n="label.blacklist">忽略这些用户（每行一个用户名或 ID）</label>
         <textarea id="userBlacklist" rows="3" placeholder="bot-name&#10;123456789012345678"></textarea>
       </div>
 
       <div class="field">
-        <label for="glossary">术语表（每行 <code>原文=译文</code>）</label>
+        <label for="glossary" data-i18n="label.glossary">术语表（每行 <code>原文=译文</code>）</label>
         <textarea id="glossary" rows="3" placeholder="DLSS=深度学习超级采样&#10;RDNA=​RDNA 架构"></textarea>
       </div>
 
-      <p class="note">
+      <p class="note" data-i18n="note.glossary">
         术语表靠「占位符不被模型改写」实现：<b>腾讯 / DeepSeek / Ollama</b> 支持良好；
         LibreTranslate 这类离线小模型会改写占位符，术语可能不生效（检测到会提示）。
       </p>
@@ -305,6 +335,7 @@
       <pre id="logBox" class="log"></pre>
     </details>
 
+    <script src="i18n.js"></script>
     <script src="engine.js"></script>
     <script src="app.js"></script>
   </body>

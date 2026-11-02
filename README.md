@@ -66,6 +66,26 @@ per-user 安装到 `%LOCALAPPDATA%\Programs\DiscordTranslator`，不弹 UAC。
 - 结果走同一套缓存，同一段文字点第二次是内存命中
 - 设置里可以整个关掉
 
+### 自动更新
+
+设置里「版本更新」卡片：显示当前版本、是安装版还是便携版，一个【检查更新】按钮，启动 8 秒后还会静默查一次。
+
+**安装版**（注册表里有卸载项、且当前 exe 就在安装目录里）点【下载并安装】后：
+
+1. 取 GitHub 最新 Release 的 `*_x64-setup.exe` 与 `sha256.txt`
+2. 下载到 `%TEMP%\DiscordTranslatorUpdate\`，算 SHA-256 与发布页比对，**不一致直接放弃**
+3. 把 `config.json` 备份成 `config.json.bak-<旧版本>`
+4. 写一个一次性 `apply.bat`：等本进程退出 → `setup.exe /S`（NSIS 静默覆盖安装，旧版本文件由安装器自行清理）→ 重新拉起程序
+5. 进程退出，安装完自动重新打开
+
+配置与数据都在 `%APPDATA%\DiscordTranslator\`（`config.json`、`store.db` 缓存），安装器不碰这个目录，所以**术语表、白名单、API Key、缓存全部原样保留**；万一目录被清掉，启动时还会自动从 `config.json.bak-*` 恢复最近一份。
+
+**便携版**不做自动替换（运行中的 exe 覆盖不了，批处理替换又容易被杀软拦），只提示有新版本并给出【打开下载页】。
+
+没有用 `tauri-plugin-updater` 的原因：那套要长期保管 minisign 私钥并塞进 CI secret，私钥丢了就再也发不出更新；这里改用发布页自带的 `sha256.txt` 做完整性校验，零密钥，代价是信任链绑在 GitHub 账号上。
+
+GitHub API 对匿名访问限速 60 次/小时/IP，被限流时自动退回「不跟随重定向、从 `Location` 头读版本号」的探测方式（不消耗额度），所以国内共享出口也能用。
+
 ### 本地翻译引擎（LibreTranslate / Ollama，一键引导部署）
 
 设置里有「本地翻译引擎」区块，两个按钮，点哪个都能把翻译搬到你自己机器上：不联网、不花钱、没有额度限制。
@@ -166,6 +186,8 @@ CDP 的 WebSocket 有 Origin 校验，所以启动 Discord 时带 `--remote-allo
 | **额度自动踢出** | 某个源额度耗尽时自动移出降级链并显示恢复倒计时，不白发请求 |
 | **本地引擎一键部署** | 引导式部署 LibreTranslate（Docker），或接本地 Ollama |
 | **本地引擎状态与卸载** | 显示已装语言包 / 已装模型及体积，可一键删容器、镜像或模型 |
+| **自动更新** | 从 GitHub 取最新版，校验 `sha256.txt` 后静默覆盖安装并自动重启；配置与术语表原样继承 |
+| **中英双语界面** | 设置里可切 中文 / English / 跟随系统，Rust 与前端两侧文案都跟着走 |
 | **划词翻译** | 选中消息里任意一段文字，点旁边「译」单独翻译，不重译整条消息 |
 | **长消息自动分段** | 超过引擎安全长度的消息按段落/句子切开翻译再拼回，避免静默截断和超时 |
 | **发送前翻译** | Discord 输入框里按 `Alt + Enter`，把要说的话翻成目标语言填回输入框 |
@@ -194,6 +216,9 @@ CDP 的 WebSocket 有 Origin 校验，所以启动 Discord 时带 `--remote-allo
 | `theme` | `system` / `dark` / `light` | `system` |
 | `channel` | `stable` / `ptb` / `canary` | `stable` |
 | `selectionTranslate` | 选中消息文字时显示「译」按钮 | `true` |
+| `language` | 界面语言：`auto` / `zh` / `en` | `auto` |
+| `autoCheckUpdate` | 启动后静默检查更新 | `true` |
+| `updateProxy` | 更新用代理，空 = 读系统代理，`direct` = 直连 | `""` |
 | `composerTranslate` / `composerAutoSend` / `outgoingLang` | 发送前翻译 | `true` / `false` / `en` |
 
 ### 安全性

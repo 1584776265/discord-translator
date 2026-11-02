@@ -1,11 +1,13 @@
 mod config;
 mod discord;
 mod http;
+mod i18n;
 mod local_engine;
 mod logging;
 mod shortcut;
 mod store;
 mod uninstall;
+mod update;
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -57,6 +59,8 @@ fn get_config(state: tauri::State<'_, AppState>) -> config::Config {
 fn save_config(state: tauri::State<'_, AppState>, cfg: config::Config) -> Result<(), String> {
     config::save(&cfg)?;
     discord::set_channel(&cfg.channel);
+    // 语言是即时生效的：Rust 侧所有提示都靠这个全局值选中文还是英文
+    i18n::set_lang(&i18n::effective(&cfg));
     if let Ok(mut cur) = state.cfg.lock() {
         *cur = cfg;
     }
@@ -67,6 +71,52 @@ fn save_config(state: tauri::State<'_, AppState>, cfg: config::Config) -> Result
 #[tauri::command]
 fn config_path() -> String {
     config::config_path().to_string_lossy().to_string()
+}
+
+/* ------------------------------------------------------------------ */
+/* 命令：版本与自动更新                                                */
+/* ------------------------------------------------------------------ */
+
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Err("只允许 http/https 链接".into());
+    }
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let mut cmd = std::process::Command::new("rundll32.exe");
+        cmd.arg("url.dll,FileProtocolHandler").arg(&url);
+        cmd.creation_flags(0x0800_0000);
+        cmd.spawn().map_err(|e| format!("打开链接失败: {}", e))?;
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = url;
+        Err("unsupported platform".into())
+    }
+}
+
+#[tauri::command]
+fn app_info() -> serde_json::Value {
+    serde_json::json!({
+        "version": update::current_version(),
+        "installed": update::is_installed_build(),
+        "lang": i18n::current(),
+        "proxy": update::proxy_url().unwrap_or_default(),
+    })
+}
+
+#[tauri::command]
+async fn update_check() -> Result<serde_json::Value, String> {
+    update::check().await
+}
+
+#[tauri::command]
+async fn update_install() -> Result<String, String> {
+    update::install().await
 }
 
 /* ------------------------------------------------------------------ */
@@ -498,6 +548,7 @@ pub fn run() {
             store.cache_prune(30);
 
             let cfg = config::load();
+            i18n::set_lang(&i18n::effective(&cfg));
             discord::set_channel(&cfg.channel);
             app.manage(AppState {
                 store,
@@ -524,6 +575,10 @@ pub fn run() {
             get_config,
             save_config,
             config_path,
+            app_info,
+            open_url,
+            update_check,
+            update_install,
             open_data_dir,
             discord_status,
             start_discord,

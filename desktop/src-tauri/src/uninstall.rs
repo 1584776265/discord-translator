@@ -4,6 +4,7 @@
 //! Docker Desktop 和 Ollama 本体属于用户自己装的应用，不替用户静默卸载，
 //! 只负责给出占用情况和卸载入口。
 
+use crate::i18n;
 use std::process::{Command, Stdio};
 
 #[cfg(windows)]
@@ -149,22 +150,28 @@ fn libre_table() -> String {
 }
 
 pub fn uninstall_libre(remove_image: bool) -> Result<String, String> {
-    let docker = docker_bin().ok_or("找不到 docker 命令")?;
+    let docker = docker_bin().ok_or(i18n::t("找不到 docker 命令", "docker command not found"))?;
 
     let rm = hidden(&docker, &["rm", "-f", &libre_table()]);
     let rm_ok = rm.is_some();
 
     let mut msg = if rm_ok {
-        "已删除 LibreTranslate 容器".to_string()
+        i18n::t("已删除 LibreTranslate 容器", "LibreTranslate container removed")
     } else {
-        "没有找到可删除的容器（可能已经不存在）".to_string()
+        i18n::t(
+            "没有找到可删除的容器（可能已经不存在）",
+            "No container found (it may already be gone)",
+        )
     };
 
     if remove_image {
         if hidden(&docker, &["rmi", LIBRE_IMAGE]).is_some() {
-            msg.push_str("，并删除了镜像");
+            msg.push_str(&i18n::t("，并删除了镜像", ", and the image was removed"));
         } else {
-            msg.push_str("，镜像删除失败（可能被其他容器引用）");
+            msg.push_str(&i18n::t(
+            "，镜像删除失败（可能被其他容器引用）",
+            ", but the image could not be removed (it may be used by another container)",
+        ));
         }
     }
 
@@ -223,10 +230,10 @@ pub fn ollama_info() -> OllamaInfo {
 }
 
 pub fn uninstall_ollama_model(model: &str) -> Result<String, String> {
-    let bin = ollama_bin().ok_or("找不到 ollama 命令")?;
+    let bin = ollama_bin().ok_or(i18n::t("找不到 ollama 命令", "ollama command not found"))?;
 
     if model.trim().is_empty() {
-        return Err("模型名不能为空".into());
+        return Err(i18n::t("模型名不能为空", "Model name cannot be empty"));
     }
 
     // ollama rm 走的是本地 11434 服务，服务没起会直接失败。
@@ -236,13 +243,19 @@ pub fn uninstall_ollama_model(model: &str) -> Result<String, String> {
     let out = hidden(bin.to_string_lossy().as_ref(), &["rm", model]);
     match out {
         Some(_) => {
-            let msg = format!("已删除模型 {}", model);
+            let msg = i18n::t(
+                &format!("已删除模型 {}", model),
+                &format!("Model {} removed", model),
+            );
             crate::logging::write("INFO", &msg);
             Ok(msg)
         }
-        None => Err(format!(
-            "删除模型 {} 失败（可能模型不存在，或 Ollama 服务未运行）",
-            model
+        None => Err(i18n::t(
+            &format!("删除模型 {} 失败（可能模型不存在，或 Ollama 服务未运行）", model),
+            &format!(
+                "Failed to remove model {} (it may not exist, or the Ollama service is not running)",
+                model
+            ),
         )),
     }
 }

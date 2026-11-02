@@ -72,6 +72,14 @@ pub struct Config {
     pub theme: String,
     /// stable | ptb | canary
     pub channel: String,
+    /// auto | zh | en
+    pub language: String,
+
+    // ---- 自动更新 ----
+    /// 启动后静默检查一次
+    pub auto_check_update: bool,
+    /// 空 = 自动读系统代理；direct = 直连；其余当作 host:port
+    pub update_proxy: String,
 
     // ---- 行为 ----
     pub autostart: bool,
@@ -108,6 +116,9 @@ impl Default for Config {
             outgoing_lang: "en".into(),
             theme: "system".into(),
             channel: "stable".into(),
+            language: "auto".into(),
+            auto_check_update: true,
+            update_proxy: String::new(),
             autostart: false,
             minimize_to_tray: true,
         }
@@ -133,13 +144,51 @@ pub fn log_path() -> PathBuf {
 
 pub fn load() -> Config {
     let path = config_path();
+
     match std::fs::read_to_string(&path) {
         Ok(text) => serde_json::from_str(&text).unwrap_or_else(|e| {
             crate::logging::write("WARN", &format!("config.json 解析失败({})，使用默认值", e));
             Config::default()
         }),
-        Err(_) => Config::default(),
+        Err(_) => {
+            // 配置文件不存在：可能是升级时安装器顺手清掉了目录。
+            // 自动更新前会留一份 config.json.bak-<旧版本>，有就恢复，
+            // 这样术语表、白名单、API Key 都不会丢。
+            if let Some(restored) = restore_from_backup() {
+                crate::logging::write("INFO", &format!("已从 {} 恢复配置", restored.display()));
+                return std::fs::read_to_string(&path)
+                    .ok()
+                    .and_then(|t| serde_json::from_str(&t).ok())
+                    .unwrap_or_default();
+            }
+            Config::default()
+        }
     }
+}
+
+/// 找最新的 config.json.bak-* 并复制回 config.json
+fn restore_from_backup() -> Option<PathBuf> {
+    let dir = app_data_dir();
+    let mut backups: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .map(|n| n.to_string_lossy().starts_with("config.json.bak-"))
+                .unwrap_or(false)
+        })
+        .collect();
+
+    if backups.is_empty() {
+        return None;
+    }
+
+    backups.sort_by_key(|p| std::fs::metadata(p).and_then(|m| m.modified()).ok());
+    let newest = backups.pop()?;
+
+    std::fs::copy(&newest, config_path()).ok()?;
+    Some(newest)
 }
 
 pub fn save(cfg: &Config) -> Result<(), String> {
