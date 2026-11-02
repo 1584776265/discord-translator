@@ -1423,6 +1423,26 @@
       saveCfg({ autoCheckUpdate: e.target.checked })
     );
 
+    $('updateChannel').addEventListener('change', async (e) => {
+      const beta = e.target.value === 'beta';
+
+      if (beta) {
+        const ok = confirm(
+          t(
+            '切到预览版？\n\n会收到带 beta 标记的测试版本，可能不稳定。\n装坏了可以点【回滚到上一版本】换回来。'
+          )
+        );
+        if (!ok) {
+          e.target.value = 'stable';
+          return;
+        }
+      }
+
+      await saveCfg({ releaseChannel: e.target.value });
+      setHint(beta ? t('已切到预览版，正在检查…') : t('已切回稳定版，正在检查…'));
+      checkUpdate(true);
+    });
+
     $('openNotesAfterUpdate').addEventListener('change', (e) =>
       saveCfg({ openNotesAfterUpdate: e.target.checked })
     );
@@ -1742,6 +1762,7 @@
     $('theme').value = c.theme || 'system';
     $('channel').value = c.channel || 'stable';
     $('language').value = c.language || 'auto';
+    $('updateChannel').value = c.releaseChannel === 'beta' ? 'beta' : 'stable';
     $('autoCheckUpdate').checked = c.autoCheckUpdate !== false;
     $('openNotesAfterUpdate').checked = c.openNotesAfterUpdate !== false;
     $('updateProxy').value = c.updateProxy || '';

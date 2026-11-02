@@ -46,6 +46,11 @@ struct Release {
     #[serde(default)]
     published_at: Option<String>,
     #[serde(default)]
+    draft: bool,
+    #[serde(default)]
+    #[allow(dead_code)]
+    prerelease: bool,
+    #[serde(default)]
     assets: Vec<Asset>,
 }
 
@@ -193,6 +198,50 @@ async fn latest_tag_via_redirect() -> Result<String, String> {
     }
 
     Ok(tag.trim_start_matches(['v', 'V']).to_string())
+}
+
+/// 从 releases.atom 里抠出最新 tag。
+/// 预览通道要用它：`/releases/latest` 会跳过 prerelease，而 atom 里第一条就是「最新的那个」，草稿除外。
+fn parse_atom_tag(xml: &str) -> Option<String> {
+    let idx = xml.find("/releases/tag/")?;
+    let rest = &xml[idx + "/releases/tag/".len()..];
+    let end = rest.find('"').or_else(|| rest.find('<'))?;
+    let tag = &rest[..end];
+
+    let t = tag.trim();
+    if t.len() < 2 {
+        return None;
+    }
+
+    Some(t.trim_start_matches(['v', 'V']).to_string())
+}
+
+async fn latest_tag_via_atom() -> Result<String, String> {
+    let c = client(20)?;
+
+    let txt = c
+        .get(format!(
+            "https://github.com/{}/{}/releases.atom",
+            OWNER, REPO
+        ))
+        .send()
+        .await
+        .map_err(|e| network_error(&e))?
+        .text()
+        .await
+        .map_err(|e| {
+            t(
+                &format!("读取发布列表失败: {}", e),
+                &format!("Failed to read the release feed: {}", e),
+            )
+        })?;
+
+    parse_atom_tag(&txt).ok_or_else(|| {
+        t(
+            "拿不到最新版本号（GitHub 页面结构可能变了）",
+            "Cannot read the latest version (the GitHub page layout may have changed)",
+        )
+    })
 }
 
 /// 已知版本号后按发布命名规则拼出资产地址（本项目的发布流程固定这么命名）
@@ -450,8 +499,51 @@ pub fn take_pending_notes() -> Option<String> {
 /* 检查更新                                                            */
 /* ------------------------------------------------------------------ */
 
+/// 更新通道：stable（默认，只认正式版）/ beta（含 prerelease 标记的测试版）
+fn channel() -> String {
+    let c = crate::config::load().release_channel;
+    if c.eq_ignore_ascii_case("beta") {
+        "beta".to_string()
+    } else {
+        "stable".to_string()
+    }
+}
+
+pub fn current_channel() -> String {
+    channel()
+}
+
+/// 是否算「有新版本」。数字段相同但当前是预发布、目标已转正式版时也要算更新，
+/// 否则预览版用户升到 1.4.1-beta.1 之后就永远收不到 1.4.1 正式版。
+fn is_newer(latest: &str, current: &str) -> bool {
+    let l = parse_ver(latest);
+    let c = parse_ver(current);
+
+    if l != c {
+        return l > c;
+    }
+
+    let current_is_pre = current.contains('-');
+    let latest_is_pre = latest.contains('-');
+
+    current_is_pre && !latest_is_pre
+}
+
 async fn fetch_release() -> Result<Remote, String> {
-    let url = format!("https://api.github.com/repos/{}/{}/releases/latest", OWNER, REPO);
+    let beta = channel() == "beta";
+
+    // /latest 不含预发布；beta 通道要 /releases 列表里第一个非 draft
+    let url = if beta {
+        format!(
+            "https://api.github.com/repos/{}/{}/releases?per_page=10",
+            OWNER, REPO
+        )
+    } else {
+        format!(
+            "https://api.github.com/repos/{}/{}/releases/latest",
+            OWNER, REPO
+        )
+    };
     let c = client(20)?;
 
     let res = match c
@@ -462,8 +554,14 @@ async fn fetch_release() -> Result<Remote, String> {
     {
         Ok(r) => r,
         Err(e) => {
-            // 网络层面失败时也试一次重定向兜底（API 域名和网页域名的可达性不一定一致）
-            return match latest_tag_via_redirect().await {
+            // 网络层面失败时也试一次兜底（API 域名和网页域名的可达性不一定一致）
+            let fallback = if beta {
+                latest_tag_via_atom().await
+            } else {
+                latest_tag_via_redirect().await
+            };
+
+            return match fallback {
                 Ok(tag) => Ok(remote_from_tag(&tag)),
                 Err(_) => Err(network_error(&e)),
             };
@@ -476,8 +574,12 @@ async fn fetch_release() -> Result<Remote, String> {
         return Err(t("仓库还没有发布任何版本", "No release has been published yet"));
     }
     if status.as_u16() == 403 || status.as_u16() == 429 {
-        // 匿名访问每小时 60 次/IP，很容易被同一出口的其他人耗光，这里退回不耗额度的重定向探测
-        let tag = latest_tag_via_redirect().await?;
+        // 匿名访问每小时 60 次/IP，很容易被同一出口的其他人耗光，这里退回不耗额度的探测
+        let tag = if beta {
+            latest_tag_via_atom().await?
+        } else {
+            latest_tag_via_redirect().await?
+        };
         return Ok(remote_from_tag(&tag));
     }
     if !status.is_success() {
@@ -487,12 +589,35 @@ async fn fetch_release() -> Result<Remote, String> {
         ));
     }
 
-    let rel: Release = res.json().await.map_err(|e| {
+    let text = res.text().await.map_err(|e| {
         t(
-            &format!("解析发布信息失败: {}", e),
-            &format!("Failed to parse release info: {}", e),
+            &format!("读取发布信息失败: {}", e),
+            &format!("Failed to read release info: {}", e),
         )
     })?;
+
+    let rel: Release = if beta {
+        let list: Vec<Release> = serde_json::from_str(&text).map_err(|e| {
+            t(
+                &format!("解析发布列表失败: {}", e),
+                &format!("Failed to parse the release list: {}", e),
+            )
+        })?;
+
+        list.into_iter().find(|r| !r.draft).ok_or_else(|| {
+            t(
+                "没有可用的版本（预览通道也没找到非草稿）",
+                "No release available (no non-draft in the beta channel either)",
+            )
+        })?
+    } else {
+        serde_json::from_str(&text).map_err(|e| {
+            t(
+                &format!("解析发布信息失败: {}", e),
+                &format!("Failed to parse release info: {}", e),
+            )
+        })?
+    };
 
     let setup = rel
         .assets
@@ -542,7 +667,7 @@ pub async fn check() -> Result<serde_json::Value, String> {
     let remote = fetch_release().await?;
 
     let current = current_version();
-    let newer = parse_ver(&remote.version) > parse_ver(&current);
+    let newer = is_newer(&remote.version, &current);
     let installed = is_installed_build();
 
     Ok(serde_json::json!({
@@ -557,6 +682,7 @@ pub async fn check() -> Result<serde_json::Value, String> {
         "notes": remote.notes,
         "publishedAt": remote.published_at,
         "proxy": proxy_url(),
+        "channel": channel(),
     }))
 }
 
@@ -903,5 +1029,69 @@ mod tests {
         );
         assert!(r.setup.as_ref().unwrap().browser_download_url.contains("/download/v9.8.7/"));
         assert!(r.sha.is_some());
+    }
+}
+
+#[cfg(test)]
+mod channel_tests {
+    use super::*;
+
+    const FEED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Release notes</title>
+  <entry>
+    <title>v1.4.1-beta.1</title>
+    <link rel="alternate" type="text/html" href="https://github.com/o/r/releases/tag/v1.4.1-beta.1"/>
+  </entry>
+  <entry>
+    <link href="https://github.com/o/r/releases/tag/v1.4.0"/>
+  </entry>
+</feed>"#;
+
+    #[test]
+    fn atom_picks_the_first_entry() {
+        assert_eq!(parse_atom_tag(FEED).as_deref(), Some("1.4.1-beta.1"));
+    }
+
+    #[test]
+    fn atom_tag_keeps_prerelease_suffix() {
+        let one = r#"<entry><link href="https://github.com/o/r/releases/tag/v2.0.0-rc.3"/></entry>"#;
+        assert_eq!(parse_atom_tag(one).as_deref(), Some("2.0.0-rc.3"));
+    }
+
+    #[test]
+    fn atom_returns_none_without_links() {
+        assert_eq!(parse_atom_tag("<feed></feed>"), None);
+    }
+
+    #[test]
+    fn prerelease_versions_compare_below_the_final_release() {
+        // 1.4.1-beta.1 与 1.4.1 的语义版本比较这里按「数字段」处理：
+        // 数字段相同即视为同代，是否升级由 tag 决定，不做 rc 排序
+        assert_eq!(parse_ver("1.4.1-beta.1"), (1, 4, 1));
+        assert!(parse_ver("1.4.1") >= parse_ver("1.4.0"));
+    }
+}
+
+#[cfg(test)]
+mod newer_tests {
+    use super::*;
+
+    #[test]
+    fn plain_version_compare() {
+        assert!(is_newer("1.4.0", "1.3.1"));
+        assert!(!is_newer("1.3.1", "1.4.0"));
+        assert!(!is_newer("1.3.1", "1.3.1"));
+    }
+
+    #[test]
+    fn beta_to_final_counts_as_update() {
+        assert!(is_newer("1.4.1", "1.4.1-beta.1"));
+        assert!(!is_newer("1.4.1-beta.1", "1.4.1-beta.1"));
+    }
+
+    #[test]
+    fn beta_of_higher_version_is_an_update() {
+        assert!(is_newer("1.4.1-beta.1", "1.4.0"));
     }
 }

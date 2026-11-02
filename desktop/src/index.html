@@ -222,6 +222,13 @@
       <div class="actions">
         <button id="btnRollback" class="btn small danger" hidden>回滚到上一版本</button>
       </div>
+      <div class="field">
+        <label for="updateChannel">更新通道</label>
+        <select id="updateChannel">
+          <option value="stable">稳定版（只收正式发布）</option>
+          <option value="beta">预览版（含测试版）</option>
+        </select>
+      </div>
       <label class="check">
         <input type="checkbox" id="autoCheckUpdate" />
         <span>启动时自动检查更新</span>

@@ -386,6 +386,13 @@
     '回滚失败：': 'Rollback failed: ',
     '已更新到 v{v}。': 'Updated to v{v}.',
     更新后打开发布说明: 'Open release notes after updating',
+    更新通道: 'Update channel',
+    '稳定版（只收正式发布）': 'Stable (releases only)',
+    '预览版（含测试版）': 'Beta (includes pre-releases)',
+    '切到预览版？\n\n会收到带 beta 标记的测试版本，可能不稳定。\n装坏了可以点【回滚到上一版本】换回来。':
+      'Switch to the beta channel?\n\nYou will get pre-release builds that may be unstable.\nIf one breaks, use “Roll back” to go back.',
+    '已切到预览版，正在检查…': 'Switched to beta — checking…',
+    '已切回稳定版，正在检查…': 'Switched back to stable — checking…',
     '页面上找不到消息节点，Discord 可能改了页面结构。点【探测页面结构】看诊断。':
       'No message nodes found — Discord may have changed its layout. Use “Probe page structure” for diagnostics.',
     翻译可能失效: 'Translation may be broken',

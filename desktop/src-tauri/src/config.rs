@@ -76,6 +76,8 @@ pub struct Config {
     pub language: String,
 
     // ---- 自动更新 ----
+    /// stable | beta
+    pub release_channel: String,
     /// 启动后静默检查一次
     pub auto_check_update: bool,
     /// 更新装完后的第一次启动，自动打开发布说明
@@ -119,6 +121,7 @@ impl Default for Config {
             theme: "system".into(),
             channel: "stable".into(),
             language: "auto".into(),
+            release_channel: "stable".into(),
             auto_check_update: true,
             open_notes_after_update: true,
             update_proxy: String::new(),
