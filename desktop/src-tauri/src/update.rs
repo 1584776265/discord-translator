@@ -543,27 +543,48 @@ pub async fn install() -> Result<String, String> {
         }
     };
 
-    let txt = c
+    let sha_res = c
         .get(&sha_asset.browser_download_url)
         .send()
         .await
-        .map_err(|e| network_error(&e))?
-        .text()
-        .await
-        .map_err(|e| {
-            t(
-                &format!("读取校验文件失败: {}", e),
-                &format!("Failed to read the checksum file: {}", e),
-            )
-        })?;
+        .map_err(|e| network_error(&e))?;
+
+    // 必须看状态码：404 时 GitHub 返回的是 HTML 页面，直接按文本解析只会得到
+    // 「校验文件里没有这个安装包的记录」这种误导性提示
+    if !sha_res.status().is_success() {
+        let _ = std::fs::remove_file(&file);
+        return Err(t(
+            &format!(
+                "下载校验文件失败：HTTP {}（发布页上的 sha256.txt 可能缺失或未生效）",
+                sha_res.status().as_u16()
+            ),
+            &format!(
+                "Failed to download sha256.txt: HTTP {} (the release may be missing it)",
+                sha_res.status().as_u16()
+            ),
+        ));
+    }
+
+    let txt = sha_res.text().await.map_err(|e| {
+        t(
+            &format!("读取校验文件失败: {}", e),
+            &format!("Failed to read the checksum file: {}", e),
+        )
+    })?;
 
     let expected = match pick_hash(&txt, &setup.name) {
         Some(h) => h,
         None => {
             let _ = std::fs::remove_file(&file);
             return Err(t(
-                "校验文件里没有这个安装包的记录",
-                "The checksum file has no entry for this installer",
+                &format!(
+                    "校验文件里没有 {} 的记录（发布页的 sha256.txt 与安装包不配套）",
+                    setup.name
+                ),
+                &format!(
+                    "sha256.txt has no entry for {} (it does not match the installer)",
+                    setup.name
+                ),
             ));
         }
     };

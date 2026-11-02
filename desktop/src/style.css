@@ -264,13 +264,26 @@ details.card[open] > summary {
 
 .actions {
   display: flex;
+  align-items: center;
   gap: 8px;
+  row-gap: 8px;
   flex-wrap: wrap;
+}
+
+/* 版本更新卡：按钮行与下面的开关各占一行，拉开距离，
+   避免窄窗口 / 高 DPI 下按钮行压到勾选项上 */
+#updateCard .actions {
+  margin-bottom: 12px;
+}
+
+#updateCard .check {
+  margin-top: 0;
 }
 
 .btn {
   flex: 1 1 auto;
   min-width: 110px;
+  white-space: nowrap;
   padding: 9px 12px;
   border-radius: 7px;
   border: 1px solid var(--line);
