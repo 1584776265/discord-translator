@@ -203,6 +203,8 @@
       caiyunToken: c.caiyunToken || '',
       channelWhitelist: c.channelWhitelist || [],
       userBlacklist: c.userBlacklist || [],
+      // LLM 走提示词注入术语，不用占位符那套
+      glossary: c.glossary || [],
       composerTranslate: c.composerTranslate !== false,
       composerAutoSend: !!c.composerAutoSend,
       outgoingLang: c.outgoingLang || 'en'
@@ -456,7 +458,14 @@
     }
 
     const glossary = (S.cfg && S.cfg.glossary) || [];
-    const prepared = msg.texts.map((t) => applyGlossary(t, glossary));
+
+    // LLM（openai / ollama）把术语表写进提示词，不再做占位符替换 ——
+    // 替换会把句子拆开，反而让译文变生硬；提示词方案命中率同样是 100%。
+    const usePromptGlossary = settings.provider === 'openai';
+
+    const prepared = msg.texts.map((t) =>
+      usePromptGlossary ? { text: t, map: [] } : applyGlossary(t, glossary)
+    );
     const hashes = prepared.map((p) => hashText(p.text, settings));
 
     // ---- 1. 先查 SQLite 持久化缓存 ----

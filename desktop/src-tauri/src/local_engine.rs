@@ -11,9 +11,9 @@
 //!   - 什么都没有 → 给出明确的安装指引，不静默失败
 
 use std::net::{SocketAddr, TcpStream};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -443,6 +443,60 @@ fn finish(ok: bool, msg: &str) {
 /// 默认模型：3B 参数，约 2GB，CPU 上也能跑出可用的速度
 const OLLAMA_MODEL: &str = "qwen2.5:3b";
 
+/// 模型大致体积，用来算下载百分比（实际 1.9GB 上下）
+const OLLAMA_MODEL_BYTES: u64 = 1_900_000_000;
+
+/// Ollama 把模型分片存在 blobs 目录里，目录大小就是下载进度
+fn ollama_blobs_dir() -> Option<std::path::PathBuf> {
+    let user = std::env::var("USERPROFILE").ok()?;
+    let p = std::path::PathBuf::from(user)
+        .join(".ollama")
+        .join("models")
+        .join("blobs");
+    if p.exists() {
+        Some(p)
+    } else {
+        None
+    }
+}
+
+/// 模型是否真的可用（manifest 已写入，ollama list 里能看到）
+fn ollama_has_model(ollama: &std::path::Path, model: &str) -> bool {
+    match Command::new(ollama)
+        .args(["list"])
+        .creation_flags_safe()
+        .output()
+    {
+        Ok(o) if o.status.success() => {
+            String::from_utf8_lossy(&o.stdout).contains(model)
+        }
+        _ => false,
+    }
+}
+
+fn dir_size(path: &std::path::Path) -> u64 {
+    let mut total = 0u64;
+    let mut stack = vec![path.to_path_buf()];
+
+    while let Some(dir) = stack.pop() {
+        let entries = match std::fs::read_dir(&dir) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            if let Ok(meta) = entry.metadata() {
+                if meta.is_dir() {
+                    stack.push(entry.path());
+                } else {
+                    total += meta.len();
+                }
+            }
+        }
+    }
+
+    total
+}
+
 /// 找 ollama 可执行文件：先看 PATH，再看默认安装目录
 fn find_ollama() -> Option<std::path::PathBuf> {
     if run_quiet("ollama", &["--version"]).is_some() {
@@ -506,7 +560,7 @@ fn deploy_ollama() {
 
         crate::logging::write("INFO", "使用 winget 安装 Ollama");
 
-        let attempt = Command::new("winget")
+        let mut installer = match Command::new("winget")
             .args([
                 "install",
                 "--id",
@@ -517,23 +571,71 @@ fn deploy_ollama() {
                 "--silent",
             ])
             .creation_flags_safe()
-            .output();
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+        {
+            Ok(c) => c,
+            Err(e) => {
+                finish(false, &format!("无法执行 winget：{}", e));
+                return;
+            }
+        };
 
-        match attempt {
-            Ok(o) if !o.status.success() => {
-                let mut detail = String::from_utf8_lossy(&o.stdout).to_string();
-                detail.push_str(&String::from_utf8_lossy(&o.stderr));
+        // 必须把管道抽干，winget 输出量不小，缓冲满了会把子进程卡住不动
+        let mut inst_out = installer.stdout.take();
+        let mut inst_err = installer.stderr.take();
+        let inst_drain = std::thread::spawn(move || {
+            use std::io::Read;
+            let mut sink = Vec::new();
+            if let Some(ref mut h) = inst_out {
+                let _ = h.read_to_end(&mut sink);
+            }
+            if let Some(ref mut h) = inst_err {
+                let _ = h.read_to_end(&mut sink);
+            }
+            sink
+        });
+
+        let started_install = Instant::now();
+
+        loop {
+            std::thread::sleep(Duration::from_secs(2));
+
+            match installer.try_wait() {
+                Ok(Some(_)) => break,
+                Ok(None) => {}
+                Err(_) => break,
+            }
+
+            let waited = started_install.elapsed().as_secs();
+            let got_exe = find_ollama().is_some();
+
+            set_state(|s| {
+                s.message = format!(
+                    "正在用 winget 安装 Ollama…已等 {} 秒{}（安装包约 700MB，通常 1~3 分钟）",
+                    waited,
+                    if got_exe { "，文件已就位" } else { "" }
+                );
+            });
+        }
+
+        let inst_status = installer.wait();
+        let inst_text = String::from_utf8_lossy(&inst_drain.join().unwrap_or_default()).to_string();
+
+        match inst_status {
+            Ok(s) if !s.success() => {
                 finish(
                     false,
                     &format!(
                         "winget 安装失败：{}。也可以到 https://ollama.com/download 手动下载。",
-                        first_line(&detail)
+                        first_line(&inst_text)
                     ),
                 );
                 return;
             }
             Err(e) => {
-                finish(false, &format!("无法执行 winget：{}", e));
+                finish(false, &format!("winget 执行异常：{}", e));
                 return;
             }
             _ => {}
@@ -589,29 +691,119 @@ fn deploy_ollama() {
         }
     }
 
-    // ---- 3. 拉模型 ----
+    // ---- 3. 拉模型：监控 blobs 目录大小算真实百分比 ----
+    // 先判断模型是否真的装好了。常见坑：上次 pull 被中断（程序被关/被杀），
+    // blob 文件留在目录里占了 1.8GB，但 manifest 没写入，ollama list 里啥都没有，
+    // 用户会以为"装完了却用不了"。
+    let already_ok = ollama_has_model(&ollama, OLLAMA_MODEL);
+    let leftover = ollama_blobs_dir().map(|p| dir_size(&p)).unwrap_or(0);
+
     set_state(|s| {
         s.phase = "pull".into();
-        s.message = format!(
-            "正在拉取模型 {}（约 2GB，视网速 5~20 分钟）…",
-            OLLAMA_MODEL
-        );
+        s.message = if already_ok {
+            format!("模型 {} 已存在，正在校验完整性…", OLLAMA_MODEL)
+        } else if leftover > 200 * 1024 * 1024 {
+            format!(
+                "检测到上次未完成的下载（已有 {:.0} MB），正在续传…",
+                leftover as f64 / 1_048_576.0
+            )
+        } else {
+            format!("正在拉取模型 {}（约 2GB）…", OLLAMA_MODEL)
+        };
     });
     crate::logging::write("INFO", &format!("开始拉取 Ollama 模型 {}", OLLAMA_MODEL));
 
-    let pull = Command::new(&ollama)
+    let started_pull = Instant::now();
+
+    let mut puller = match Command::new(&ollama)
         .args(["pull", OLLAMA_MODEL])
         .creation_flags_safe()
-        .output();
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            finish(false, &format!("无法启动 ollama pull：{}", e));
+            return;
+        }
+    };
 
-    match pull {
-        Ok(o) if !o.status.success() => {
-            let e = String::from_utf8_lossy(&o.stderr);
-            finish(false, &format!("模型拉取失败：{}", first_line(&e)));
+    // 同上：不抽干管道，ollama 的进度输出会把缓冲区占满导致卡死
+    let mut pull_out = puller.stdout.take();
+    let mut pull_err = puller.stderr.take();
+    let pull_drain = std::thread::spawn(move || {
+        use std::io::Read;
+        let mut sink = Vec::new();
+        if let Some(ref mut h) = pull_out {
+            let _ = h.read_to_end(&mut sink);
+        }
+        if let Some(ref mut h) = pull_err {
+            let _ = h.read_to_end(&mut sink);
+        }
+        sink
+    });
+
+    let mut last_size = 0u64;
+    let mut last_at = Instant::now();
+
+    loop {
+        std::thread::sleep(Duration::from_secs(2));
+
+        match puller.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) => {}
+            Err(_) => break,
+        }
+
+        let size = ollama_blobs_dir().map(|p| dir_size(&p)).unwrap_or(0);
+        let pct = ((size as f64 / OLLAMA_MODEL_BYTES as f64) * 100.0).min(99.5);
+        let waited = started_pull.elapsed().as_secs();
+
+        // 下载速度：靠两次采样差值算，能让用户判断是不是卡住了
+        let dt = last_at.elapsed().as_secs_f64();
+        let speed = if dt > 0.5 && size > last_size {
+            (size - last_size) as f64 / 1_048_576.0 / dt
+        } else {
+            0.0
+        };
+        last_size = size;
+        last_at = Instant::now();
+
+        set_state(|s| {
+            s.message = if size > 0 {
+                if speed > 0.05 {
+                    format!(
+                        "正在下载模型… {:.0}%（{:.0} / 1900 MB，{:.1} MB/s），已等 {} 秒",
+                        pct,
+                        size as f64 / 1_048_576.0,
+                        speed,
+                        waited
+                    )
+                } else {
+                    format!(
+                        "正在下载模型… {:.0}%（{:.0} / 1900 MB，速度 0，可能卡住了），已等 {} 秒",
+                        pct,
+                        size as f64 / 1_048_576.0,
+                        waited
+                    )
+                }
+            } else {
+                format!("正在连接模型仓库…已等 {} 秒", waited)
+            };
+        });
+    }
+
+    let pull_status = puller.wait();
+    let pull_text = String::from_utf8_lossy(&pull_drain.join().unwrap_or_default()).to_string();
+
+    match pull_status {
+        Ok(s) if !s.success() => {
+            finish(false, &format!("模型拉取失败：{}", first_line(&pull_text)));
             return;
         }
         Err(e) => {
-            finish(false, &format!("无法拉取模型：{}", e));
+            finish(false, &format!("模型拉取异常：{}", e));
             return;
         }
         _ => {}

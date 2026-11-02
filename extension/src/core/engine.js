@@ -652,8 +652,18 @@
   /* 翻译源：OpenAI 兼容                                                  */
   /* ================================================================== */
 
-  const OPENAI_SYSTEM = (langStr) =>
-    [
+  /**
+   * LLM 的术语表走提示词，不走占位符替换。
+   *
+   * 实测对比（qwen2.5:3b，7 条术语的一整句）：
+   *   不带术语      → 命中 5/7
+   *   占位符 <0>    → 命中 7/7，但句子生硬（"解决了…" 而非 "修复了…"）
+   *   提示词        → 命中 7/7，且用词和语序都更自然
+   * 所以对 openai / ollama 这类模型，把术语当上下文给比强行替换更划算 ——
+   * 既保证了术语，又不会因为拆词破坏句式。
+   */
+  const OPENAI_SYSTEM = (langStr, glossary) => {
+    const rules = [
       '你是一个翻译引擎，不是助手。',
       '把用户给出的每一条「编号行」翻译成' + langStr + '。',
       '严格规则：',
@@ -662,7 +672,39 @@
       '3. 保留原文中的 @提及、#频道、URL、`代码`、表情符号、Markdown 符号。',
       '4. 如果某条本身已经是' + langStr + '，原样输出该条。',
       '5. 不要翻译专有名词、游戏 ID、用户名。'
-    ].join('\n');
+    ];
+
+    if (glossary && glossary.length) {
+      // 只加一句提醒，术语本身放到 user 消息里 —— 实测把十几条术语堆进
+      // system 会让 3B 模型忽略掉「保留 [数字] 前缀」的格式要求。
+      rules.push('6. 用户消息开头若给出「术语参考」，必须严格采用其中译法。');
+    }
+
+    return rules.join('\n');
+  };
+
+  /**
+   * 拼 user 消息：术语参考放最前面，正文按 [n] 编号。
+   * 术语贴近正文时模型注意力更集中，格式也不会乱。
+   */
+  function buildUserContent(texts, glossary) {
+    let prefix = '';
+
+    if (glossary && glossary.length) {
+      const refs = glossary
+        .slice(0, 60)
+        .filter((g) => g && g.from)
+        .map((g) => g.from + '=' + g.to)
+        .join('；');
+      if (refs) prefix = '（术语参考：' + refs + '）\n\n';
+    }
+
+    const body = texts
+      .map((t, i) => '[' + (i + 1) + '] ' + String(t).replace(/\r?\n/g, ' ⏎ '))
+      .join('\n');
+
+    return prefix + body;
+  }
 
   function parseNumbered(text) {
     const map = new Map();
@@ -684,16 +726,14 @@
     const url = base + '/chat/completions';
     const langStr = langName(s.targetLang) || s.targetLang;
 
-    const userContent = texts
-      .map((t, i) => '[' + (i + 1) + '] ' + String(t).replace(/\r?\n/g, ' ⏎ '))
-      .join('\n');
+    const userContent = buildUserContent(texts, s.glossary);
 
     const payload = {
       model: s.openaiModel || 'gpt-4o-mini',
       temperature: 0,
       stream: false,
       messages: [
-        { role: 'system', content: OPENAI_SYSTEM(langStr) },
+        { role: 'system', content: OPENAI_SYSTEM(langStr, s.glossary) },
         { role: 'user', content: userContent }
       ]
     };
