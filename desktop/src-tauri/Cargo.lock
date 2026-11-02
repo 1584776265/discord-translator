@@ -837,7 +837,7 @@ dependencies = [
 
 [[package]]
 name = "discord-translator"
-version = "1.4.1-beta.1"
+version = "1.4.1"
 dependencies = [
  "chrono",
  "reqwest 0.12.28",

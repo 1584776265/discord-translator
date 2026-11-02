@@ -117,6 +117,7 @@ fn app_info() -> serde_json::Value {
         "lang": i18n::current(),
         "proxy": update::proxy_url().unwrap_or_default(),
         "backup": update::backup_version(),
+        "channel": update::current_channel(),
     })
 }
 

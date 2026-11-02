@@ -405,6 +405,31 @@ pub fn backup_version() -> Option<String> {
     list_backups().into_iter().next().map(|(v, _)| v)
 }
 
+/// 把「应用和功能」里显示的版本号改成回滚后的版本（只影响 HKCU 下的卸载项）
+fn update_uninstall_version(ver: &str) {
+    for key in [
+        format!(
+            r"HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\{}",
+            uninstall_key_name()
+        ),
+        format!(
+            r"HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\DiscordTranslator"
+        ),
+    ] {
+        let mut cmd = Command::new("reg");
+        cmd.args(["add", &key, "/v", "DisplayVersion", "/t", "REG_SZ", "/d", ver, "/f"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        #[cfg(windows)]
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        let _ = cmd.status();
+    }
+}
+
+fn uninstall_key_name() -> String {
+    install_info().map(|(n, _)| n).unwrap_or_default()
+}
+
 /// 回滚：把最新的备份换回原位再重新拉起程序
 pub fn rollback() -> Result<String, String> {
     let (ver, bak) = match list_backups().into_iter().next() {
@@ -418,6 +443,9 @@ pub fn rollback() -> Result<String, String> {
     };
 
     let exe = exe_path()?;
+
+    // 回滚只是换 exe，安装记录还留在注册表里；不改的话「应用和功能」会一直显示被回滚掉的那个版本
+    update_uninstall_version(&ver);
 
     let dir = std::env::temp_dir().join("DiscordTranslatorUpdate");
     let _ = std::fs::create_dir_all(&dir);

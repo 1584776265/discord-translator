@@ -84,6 +84,8 @@ per-user 安装到 `%LOCALAPPDATA%\Programs\DiscordTranslator`，不弹 UAC。
 
 **回滚**：安装版在覆盖前会把当前 exe 复制成 `DiscordTranslator.exe.bak-<版本>`（同目录，最多 3 份）。设置里出现【回滚到 1.2.x】按钮（托盘右键也有），点一下就是「等进程退出 → 把当前 exe 改名 `.bad` → 备份换回原位 → 重新拉起」，全程不需要管理员。
 
+**通道**：设置里可选「稳定版（只收正式发布）」与「预览版（含测试版）」。预览版走 `/releases` 列表取第一个非草稿（含 `prerelease`），稳定版走 `/releases/latest`。版本比较按数字段，且「当前是 beta、目标是同数字正式版」也算更新，预览用户不会卡在 beta 上；反向（正式版回落到 beta）不会触发降级。切到预览版需要二次确认。
+
 **注入自检**：注入 15 秒后确认页面上真的有消息节点。Discord 改版把 `chat-messages-` 之类的类名改了，会弹系统通知 + 日志红字；同时消息节点与正文各有三套候选选择器（`li[id^=chat-messages-]` / `[data-list-item-id^=chat-messages]` / `li[class*=messageListItem]`，正文同理），命中备用选择器时日志会提示。
 
 没有用 `tauri-plugin-updater` 的原因：那套要长期保管 minisign 私钥并塞进 CI secret，私钥丢了就再也发不出更新；这里改用发布页自带的 `sha256.txt` 做完整性校验，零密钥，代价是信任链绑在 GitHub 账号上。
@@ -191,6 +193,7 @@ CDP 的 WebSocket 有 Origin 校验，所以启动 Discord 时带 `--remote-allo
 | **本地引擎一键部署** | 引导式部署 LibreTranslate（Docker），或接本地 Ollama |
 | **本地引擎状态与卸载** | 显示已装语言包 / 已装模型及体积，可一键删容器、镜像或模型 |
 | **自动更新** | 从 GitHub 取最新版，校验 `sha256.txt` 后静默覆盖安装并自动重启；配置与术语表原样继承 |
+| **更新通道** | 稳定版（只收正式发布）/ 预览版（含 `prerelease` 测试版），随时可切 |
 | **回滚** | 更新前自动备份旧 exe，一键换回去；最多保留 3 份 |
 | **注入自检 + 结构探测** | 选择器三级兜底，Discord 改版时会主动报警，还能一键打印各选择器命中数 |
 | **中英双语界面** | 设置里可切 中文 / English / 跟随系统，Rust 与前端两侧文案都跟着走 |
@@ -223,6 +226,7 @@ CDP 的 WebSocket 有 Origin 校验，所以启动 Discord 时带 `--remote-allo
 | `channel` | `stable` / `ptb` / `canary` | `stable` |
 | `selectionTranslate` | 选中消息文字时显示「译」按钮 | `true` |
 | `language` | 界面语言：`auto` / `zh` / `en` | `auto` |
+| `releaseChannel` | 更新通道：`stable` / `beta` | `stable` |
 | `autoCheckUpdate` | 启动后静默检查更新 | `true` |
 | `openNotesAfterUpdate` | 更新后第一次启动打开发布说明 | `true` |
 | `updateProxy` | 更新用代理，空 = 读系统代理，`direct` = 直连 | `""` |

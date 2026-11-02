@@ -1,6 +1,6 @@
 [package]
 name = "discord-translator"
-version = "1.4.1-beta.1"
+version = "1.4.1"
 description = "Discord 自动翻译桌面版"
 authors = ["1584776265"]
 edition = "2021"
