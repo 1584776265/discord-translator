@@ -58,6 +58,57 @@ fn port_open(port: u16) -> bool {
     TcpStream::connect_timeout(&addr, Duration::from_millis(400)).is_ok()
 }
 
+/// 用系统默认浏览器打开链接。
+/// 走 ShellExecuteW 而不是 `cmd /c start`：后者会闪一下黑窗。
+fn open_url(url: &str) {
+    #[cfg(windows)]
+    {
+        use windows::core::HSTRING;
+        use windows::Win32::UI::Shell::ShellExecuteW;
+        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+        unsafe {
+            let _ = ShellExecuteW(
+                None,
+                &HSTRING::from("open"),
+                &HSTRING::from(url),
+                None,
+                None,
+                SW_SHOWNORMAL,
+            );
+        }
+    }
+
+    #[cfg(not(windows))]
+    {
+        let _ = url;
+    }
+}
+
+const DOCKER_DOWNLOAD_URL: &str = "https://www.docker.com/products/docker-desktop/";
+const OLLAMA_DOWNLOAD_URL: &str = "https://ollama.com/download";
+
+/// 尝试拉起已安装但没运行的 Docker Desktop
+fn try_start_docker_desktop() -> bool {
+    let candidates = [
+        r"C:\Program Files\Docker\Docker\Docker Desktop.exe",
+        r"C:\Program Files\Docker\Docker\frontend\Docker Desktop.exe",
+    ];
+
+    for path in candidates.iter() {
+        if std::path::Path::new(path).exists() {
+            let mut cmd = Command::new(path);
+            cmd.creation_flags_safe();
+            if cmd.spawn().is_ok() {
+                crate::logging::write("INFO", "已尝试启动 Docker Desktop");
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
 fn run_quiet(program: &str, args: &[&str]) -> Option<String> {
     let mut cmd = Command::new(program);
     cmd.args(args);
@@ -121,17 +172,25 @@ pub fn start_deploy() {
         let env = detect();
 
         if !env.docker {
+            // 直接打开下载页，省得用户自己去找
+            open_url(DOCKER_DOWNLOAD_URL);
             finish(
                 false,
-                "没有检测到 Docker。请先安装 Docker Desktop（约 600MB），安装后重启本程序再试。",
+                "没有检测到 Docker，已为你打开 Docker Desktop 下载页。装好并启动它之后，重启本程序再点一次部署。",
             );
             return;
         }
 
         if !env.docker_running {
+            // 装了但没启动：顺手把 Docker Desktop 拉起来
+            let started = try_start_docker_desktop();
             finish(
                 false,
-                "Docker 已安装但没有运行。请先启动 Docker Desktop，等它显示 Running 后再点部署。",
+                if started {
+                    "Docker 已安装但没在运行，正在为你启动 Docker Desktop。等托盘图标变成运行中（约 30~60 秒）后，再点一次部署。"
+                } else {
+                    "Docker 已安装但没在运行。请手动启动 Docker Desktop，等它显示 Running 后再点部署。"
+                },
             );
             return;
         }
@@ -322,9 +381,10 @@ fn deploy_ollama() {
         });
 
         if run_quiet("winget", &["--version"]).is_none() {
+            open_url(OLLAMA_DOWNLOAD_URL);
             finish(
                 false,
-                "没有检测到 Ollama，也没有 winget。请到 https://ollama.com/download 下载安装包，装好后重启本程序再点部署。",
+                "没有检测到 Ollama，也没有 winget，已为你打开下载页。装好后重启本程序再点一次部署。",
             );
             return;
         }
