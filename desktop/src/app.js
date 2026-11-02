@@ -1818,9 +1818,18 @@
       log('INFO', `update available: ${info.currentVersion} -> ${info.latestVersion}`);
     } catch (e) {
       const msg = String((e && e.message) || e);
-      $('verMode').textContent = msg;
-      if (manual) setHint(msg, true);
+
+      // 状态行只放一句「检查失败」，原始报错（可能很长）进提示条和日志
+      $('verMode').textContent = t('检查失败');
+      if (manual) setHint(t('检查失败：') + msg, true);
       log('WARN', 'update check failed: ' + msg);
+      $('verDetail').textContent = msg.slice(0, 160);
+
+      // 自动检查失败多半是代理/网络抖一下，隔 20 秒重试一次
+      if (!manual && !S.updateRetried) {
+        S.updateRetried = true;
+        setTimeout(() => checkUpdate(false), 20000);
+      }
     } finally {
       btn.disabled = false;
       btn.textContent = t('检查更新');

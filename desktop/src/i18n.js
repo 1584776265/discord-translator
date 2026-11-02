@@ -355,6 +355,7 @@
     发现新版本: 'Update available',
     '正在检查…': 'Checking…',
     '检查失败：': 'Check failed: ',
+    检查失败: 'Check failed',
     '下载中…': 'Downloading…',
     '正在下载更新…': 'Downloading the update…',
     '更新已开始，程序即将重启': 'Update started — the app will restart',
