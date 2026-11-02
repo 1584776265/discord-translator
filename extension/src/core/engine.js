@@ -766,12 +766,32 @@
     return { ok: true, text: String(out).trim(), detected: (det && (det.language || det)) || '' };
   }
 
+  /** 把 LibreTranslate 的技术报错翻成人话 */
+  function friendlyLibreError(e) {
+    const msg = String((e && e.message) || e);
+
+    if (/is not available as a (target|source) language/i.test(msg)) {
+      const m = msg.match(/from ([A-Za-z ]+?)\s*\(([a-z]{2})\)/i);
+      const from = m ? m[1] + ' (' + m[2] + ')' : '该语言';
+      return (
+        '本机 LibreTranslate 没有安装 ' + from + ' 的翻译模型。' +
+        '重新部署时多勾几种语言，或者把翻译服务切回「自动」。'
+      );
+    }
+
+    if (/HTTP 400/i.test(msg)) {
+      return 'LibreTranslate 请求被拒绝：' + msg.slice(0, 100);
+    }
+
+    return msg;
+  }
+
   async function libreTranslate(texts, s) {
     return mapLimit(texts, Math.min(s.concurrency || 4, 3), async (text) => {
       try {
         return await withRetry(() => libreTranslateOne(text, s), s.retries || 2);
       } catch (e) {
-        return { ok: false, error: String((e && e.message) || e) };
+        return { ok: false, error: friendlyLibreError(e) };
       }
     });
   }

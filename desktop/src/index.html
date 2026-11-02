@@ -231,7 +231,13 @@
         <textarea id="glossary" rows="3" placeholder="DLSS=深度学习超级采样&#10;RDNA=​RDNA 架构"></textarea>
       </div>
 
+      <p class="note">
+        术语表靠「占位符不被模型改写」实现：<b>腾讯 / DeepSeek / Ollama</b> 支持良好；
+        LibreTranslate 这类离线小模型会改写占位符，术语可能不生效（检测到会提示）。
+      </p>
+
       <div class="actions">
+        <button id="btnPresetGlossary" class="btn small">加载推荐术语</button>
         <button id="btnImportGlossary" class="btn small">导入</button>
         <button id="btnExportGlossary" class="btn small">导出</button>
       </div>

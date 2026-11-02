@@ -89,6 +89,17 @@
   /* 术语表：翻译前用私有区字符占位，翻译后还原                          */
   /* ---------------------------------------------------------------- */
 
+  /**
+   * 术语占位符格式：<0> <1> ...
+   *
+   * 实测对比过 8 种格式（私有区字符、{{0}}、[[0]]、%0%、__0__、$0$$ 等），
+   * 只有尖括号 <0> 和井号 #0# 能被小模型原样保留：
+   *   - 私有区字符会被 LibreTranslate 当普通文本，变成 "QQ0+++" 甚至直接吞掉
+   *   - {{0}} / [[0]] / %0% 全被改写
+   *   - 腾讯和 LibreTranslate 都保留了 <0>，所以统一用它
+   */
+  const GLOSSARY_TOKEN = (i) => '<' + i + '>';
+
   function applyGlossary(text, glossary) {
     if (!glossary || !glossary.length) return { text, map: [] };
     let out = text;
@@ -97,8 +108,21 @@
     for (let i = 0; i < glossary.length; i++) {
       const g = glossary[i];
       if (!g || !g.from) continue;
-      const token = '\uE000' + i + '\uE001';
-      const re = new RegExp(escapeRe(g.from), 'gi');
+      const token = GLOSSARY_TOKEN(i);
+
+      // 纯英文/数字的术语要加词边界，否则 "mod" 会吃掉 "mode"、"modern" 里的 mod
+      const isAscii = /^[A-Za-z0-9][A-Za-z0-9\s\-_.]*$/.test(g.from);
+      const pattern = isAscii
+        ? '(?<![A-Za-z0-9])' + escapeRe(g.from) + '(?![A-Za-z0-9])'
+        : escapeRe(g.from);
+
+      let re;
+      try {
+        re = new RegExp(pattern, 'gi');
+      } catch (e) {
+        continue;
+      }
+
       if (re.test(out)) {
         out = out.replace(re, token);
         map.push({ token, to: g.to || g.from });
@@ -107,10 +131,49 @@
     return { text: out, map };
   }
 
+  /**
+   * 推荐术语表：游戏 / 显卡 / MOD 圈高频词。
+   * 长词必须排在短词之前（"graphics driver" 要在 "driver" 前面），
+   * 因为 applyGlossary 是按顺序逐个替换的。
+   */
+  const RECOMMENDED_GLOSSARY = [
+    { from: 'graphics driver', to: '显卡驱动' },
+    { from: 'display driver', to: '显示驱动' },
+    { from: 'texture streaming', to: '纹理流送' },
+    { from: 'ray tracing', to: '光线追踪' },
+    { from: 'frame rate', to: '帧率' },
+    { from: 'patch notes', to: '更新日志' },
+    { from: 'upscaling', to: '超分辨率' },
+    { from: 'changelog', to: '更新日志' },
+    { from: 'shader', to: '着色器' },
+    { from: 'texture', to: '纹理' },
+    { from: 'driver', to: '驱动程序' },
+    { from: 'patch', to: '补丁' },
+    { from: 'crash', to: '崩溃' },
+    { from: 'stutter', to: '卡顿' },
+    { from: 'VRAM', to: '显存' },
+    { from: 'GPU', to: '显卡' },
+    { from: 'mod', to: 'MOD' }
+  ];
+
+  /**
+   * 还原占位符。
+   * 返回丢失数量：LibreTranslate 这类逐词对齐的小模型会把 <0> 改写成 " 0 "
+   * 甚至直接吞掉，此时术语不会生效 —— 要能检测出来而不是悄悄错译。
+   */
   function restoreGlossary(text, map) {
     let out = text;
-    for (const m of map) out = out.split(m.token).join(m.to);
-    return out;
+    let lost = 0;
+
+    for (const m of map) {
+      if (out.indexOf(m.token) >= 0) {
+        out = out.split(m.token).join(m.to);
+      } else {
+        lost++;
+      }
+    }
+
+    return { text: out, lost };
   }
 
   /* ---------------------------------------------------------------- */
@@ -442,16 +505,28 @@
     }
 
     // ---- 3. 还原术语 ----
+    let lostTotal = 0;
+
     const final = results.map((r, i) => {
       if (!r) return { ok: false, error: '无结果' };
       if (r.ok && r.text && !r.cached) {
-        const restored = restoreGlossary(r.text, prepared[i].map);
-        if (restored !== r.text) return Object.assign({}, r, { text: restored });
-      } else if (r.cached) {
-        // 缓存里存的是还原过术语的成品，直接用
+        const out = restoreGlossary(r.text, prepared[i].map);
+        lostTotal += out.lost;
+        if (out.text !== r.text) return Object.assign({}, r, { text: out.text });
       }
       return r;
     });
+
+    // 占位符被模型改写：说明当前引擎不遵守标记，提示一次就好
+    if (lostTotal > 0 && !S.glossaryLostWarned) {
+      S.glossaryLostWarned = true;
+      log(
+        'WARN',
+        `${lostTotal} 个术语占位符被当前翻译引擎改写，术语表未生效。` +
+          '本地小模型（LibreTranslate）对术语表支持有限，建议改用腾讯 / DeepSeek / Ollama。'
+      );
+      setHint('当前翻译引擎不支持术语占位符，术语表未生效。建议换腾讯 / DeepSeek / Ollama。', true);
+    }
 
     const bad = final.filter((r) => r && !r.ok).length;
     if (bad > 0) {
@@ -1283,6 +1358,28 @@
       } catch (e) {
         setHint('清理失败：' + e.message, true);
       }
+    });
+
+    $('btnPresetGlossary').addEventListener('click', async () => {
+      const cur = (S.cfg.glossary || []).slice();
+      const existing = new Set(cur.map((g) => String(g.from || '').toLowerCase()));
+
+      let added = 0;
+      for (const item of RECOMMENDED_GLOSSARY) {
+        if (!existing.has(item.from.toLowerCase())) {
+          cur.push(item);
+          added++;
+        }
+      }
+
+      await saveCfg({ glossary: cur });
+      $('glossary').value = cur.map((g) => `${g.from}=${g.to}`).join('\n');
+      setHint(
+        added > 0
+          ? `已添加 ${added} 条推荐术语（共 ${cur.length} 条），对本地小模型效果最明显。`
+          : '推荐术语已经全部存在了。'
+      );
+      log('INFO', `加载推荐术语表，新增 ${added} 条`);
     });
 
     $('btnImportGlossary').addEventListener('click', async () => {

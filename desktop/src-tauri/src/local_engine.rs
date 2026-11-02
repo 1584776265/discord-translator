@@ -351,7 +351,9 @@ pub fn start_deploy() {
                 "5000:5000",
                 "libretranslate/libretranslate:latest",
                 "--load-only",
-                "en,zh,ja,ko,ru",
+                // 覆盖 Discord 上最常见的几种语言；没列到的语言对会直接报
+                // "not available as a target language"，所以宁可多列几个
+                "en,zh,ja,ko,ru,de,fr,es,pt,it",
             ])
             .creation_flags_safe()
             .output();
