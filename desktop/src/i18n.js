@@ -17,6 +17,7 @@
     '正在检查环境…': 'Checking environment…',
     '开启 / 暂停翻译': 'Start / pause translation',
     未连接: 'Not connected',
+    '找不到 %LOCALAPPDATA%\\Discord': 'Cannot find %LOCALAPPDATA%\\Discord',
     已翻译: 'Translated',
     当前消息: 'Messages',
     今日请求: 'Requests today',
