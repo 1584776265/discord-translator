@@ -58,6 +58,37 @@ fn port_open(port: u16) -> bool {
     TcpStream::connect_timeout(&addr, Duration::from_millis(400)).is_ok()
 }
 
+/// 真正请求一次 /languages，判断服务是否已经能响应。
+///
+/// 不能只看端口：LibreTranslate 容器刚创建时 Docker 就把 5000 端口映射好了，
+/// 但里面的 Python 进程还在下载模型、根本没监听，此时 port_open 会是 true，
+/// 连接上去却被立即重置 —— 照着端口判断会误报"部署完成"。
+fn libre_http_ready() -> bool {
+    use std::io::{Read, Write};
+
+    let addr: SocketAddr = ([127, 0, 0, 1], LIBRE_PORT).into();
+    let mut stream = match TcpStream::connect_timeout(&addr, Duration::from_millis(800)) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+
+    let req = "GET /languages HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n";
+    if stream.write_all(req.as_bytes()).is_err() {
+        return false;
+    }
+
+    let mut buf = [0u8; 512];
+    match stream.read(&mut buf) {
+        Ok(n) if n > 12 => {
+            let head = String::from_utf8_lossy(&buf[..n]);
+            head.starts_with("HTTP/1.1 200") || head.starts_with("HTTP/1.0 200")
+        }
+        _ => false,
+    }
+}
+
 /// 用系统默认浏览器打开链接。
 /// 走 ShellExecuteW 而不是 `cmd /c start`：后者会闪一下黑窗。
 fn open_url(url: &str) {
@@ -123,6 +154,55 @@ fn run_quiet(program: &str, args: &[&str]) -> Option<String> {
     }
 }
 
+/// 找 docker 可执行文件。
+/// Docker Desktop 4.30+ 默认 per-user 安装，CLI 不在 Program Files 也不一定在 PATH 里。
+fn find_docker() -> Option<String> {
+    if run_quiet("docker", &["--version"]).is_some() {
+        return Some("docker".to_string());
+    }
+
+    let mut candidates: Vec<String> = Vec::new();
+
+    if let Ok(local) = std::env::var("LOCALAPPDATA") {
+        candidates.push(format!(
+            r"{}\Programs\DockerDesktop\resources\bin\docker.exe",
+            local
+        ));
+    }
+    if let Ok(pf) = std::env::var("ProgramFiles") {
+        candidates.push(format!(r"{}\Docker\Docker\resources\bin\docker.exe", pf));
+    }
+
+    for path in candidates {
+        if std::path::Path::new(&path).exists() {
+            return Some(path);
+        }
+    }
+
+    None
+}
+
+/// 已经下载了多少个语言模型 —— 用来给用户显示真实进度
+fn libre_model_count(docker_bin: &str) -> Option<u32> {
+    let out = Command::new(docker_bin)
+        .args([
+            "exec",
+            "discord-translator-libre",
+            "sh",
+            "-c",
+            "ls /home/libretranslate/.local/share/argos-translate/packages 2>/dev/null | wc -l",
+        ])
+        .creation_flags_safe()
+        .output()
+        .ok()?;
+
+    if !out.status.success() {
+        return None;
+    }
+
+    String::from_utf8_lossy(&out.stdout).trim().parse().ok()
+}
+
 pub struct LocalEnv {
     pub docker: bool,
     pub docker_running: bool,
@@ -132,16 +212,26 @@ pub struct LocalEnv {
 }
 
 pub fn detect() -> LocalEnv {
-    let docker_version = run_quiet("docker", &["--version"]).unwrap_or_default();
+    let docker_path = find_docker();
+
+    let docker_version = docker_path
+        .as_deref()
+        .and_then(|p| run_quiet(p, &["--version"]))
+        .unwrap_or_default();
     let docker = !docker_version.is_empty();
 
     // docker --version 成功不代表守护进程在跑，info 才需要连 daemon
-    let docker_running = docker && run_quiet("docker", &["info", "--format", "{{.ServerVersion}}"]).is_some();
+    let docker_running = docker
+        && docker_path
+            .as_deref()
+            .and_then(|p| run_quiet(p, &["info", "--format", "{{.ServerVersion}}"]))
+            .is_some();
 
     LocalEnv {
         docker,
         docker_running,
-        libre_running: port_open(LIBRE_PORT),
+        // 同样不能用端口判断：容器创建瞬间端口就映射好了
+        libre_running: libre_http_ready(),
         ollama_running: port_open(OLLAMA_PORT),
         docker_version,
     }
@@ -196,9 +286,17 @@ pub fn start_deploy() {
         }
 
         if env.libre_running {
-            finish(true, "本机已经有 LibreTranslate 在 5000 端口运行，无需重复部署。");
+            finish(true, "本机已经有 LibreTranslate 在 5000 端口正常运行，无需重复部署。");
             return;
         }
+
+        let docker_bin = match find_docker() {
+            Some(p) => p,
+            None => {
+                finish(false, "环境检测到 Docker 但找不到 docker 命令，请重启本程序后再试。");
+                return;
+            }
+        };
 
         set_state(|s| {
             s.phase = "pull".into();
@@ -207,7 +305,7 @@ pub fn start_deploy() {
         crate::logging::write("INFO", "开始拉取 libretranslate 镜像");
 
         // 先单独 pull，这样能明确区分「拉取失败」和「启动失败」
-        let pull = Command::new("docker")
+        let pull = Command::new(&docker_bin)
             .args(["pull", "libretranslate/libretranslate:latest"])
             .creation_flags_safe()
             .output();
@@ -234,12 +332,14 @@ pub fn start_deploy() {
         });
 
         // 已经存在同名容器就先删掉，避免端口冲突
-        let _ = Command::new("docker")
+        let _ = Command::new(&docker_bin)
             .args(["rm", "-f", "discord-translator-libre"])
             .creation_flags_safe()
             .output();
 
-        let run = Command::new("docker")
+        // --load-only 是关键：不加它，容器启动时会下载全部 60 多个语言模型
+        // （2~3GB，10~20 分钟才开始监听端口）。只加载常用语言能压到几分钟。
+        let run = Command::new(&docker_bin)
             .args([
                 "run",
                 "-d",
@@ -250,6 +350,8 @@ pub fn start_deploy() {
                 "-p",
                 "5000:5000",
                 "libretranslate/libretranslate:latest",
+                "--load-only",
+                "en,zh,ja,ko,ru",
             ])
             .creation_flags_safe()
             .output();
@@ -269,32 +371,43 @@ pub fn start_deploy() {
 
         set_state(|s| {
             s.phase = "wait".into();
-            s.message = "容器已启动，等待服务就绪（首次要加载语言模型，约 1~2 分钟）…".into();
+            s.message = "容器已启动，正在下载语言模型（中英日韩俄，首次约 3~8 分钟）…".into();
         });
 
-        // LibreTranslate 冷启动要加载模型，给足 150 秒
-        for i in 0..75 {
+        // 下载模型 + 加载，给足 12 分钟
+        for i in 0..360 {
             std::thread::sleep(Duration::from_secs(2));
-            if port_open(LIBRE_PORT) {
-                // 端口通了还要确认真的能翻译
-                std::thread::sleep(Duration::from_secs(3));
+
+            if libre_http_ready() {
                 finish(
                     true,
-                    "LibreTranslate 已就绪（http://127.0.0.1:5000）。请在「翻译服务」里选择 LibreTranslate 并保存。",
+                    "LibreTranslate 已就绪（http://127.0.0.1:5000）。已自动切换翻译服务。",
                 );
                 crate::logging::write("INFO", "LibreTranslate 部署完成");
                 return;
             }
-            if i % 10 == 9 {
+
+            // 每 16 秒刷新一次真实进度：直接数容器里的模型目录
+            if i % 8 == 7 {
+                let waited = (i + 1) * 2;
+                let count = libre_model_count(&docker_bin).unwrap_or(0);
+
                 set_state(|s| {
-                    s.message = format!("仍在等待服务就绪…（已等 {} 秒）", (i + 1) * 2);
+                    s.message = if count > 0 {
+                        format!(
+                            "正在下载语言模型… 已完成 {} 个（已等 {} 秒，首次最长约 12 分钟）",
+                            count, waited
+                        )
+                    } else {
+                        format!("正在启动容器并准备下载模型…（已等 {} 秒）", waited)
+                    };
                 });
             }
         }
 
         finish(
             false,
-            "容器已启动但 150 秒内端口没通。可能是镜像首次下载语言模型较慢，稍后点「检测」看看。",
+            "容器起来了但 12 分钟内接口没响应。多半是模型还没下完，可以过几分钟点「重新检测」看看，或运行 docker logs discord-translator-libre 查看进度。",
         );
     });
 }
