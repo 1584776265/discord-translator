@@ -55,6 +55,10 @@ pub struct Config {
     // ---- 术语表 ----
     pub glossary: Vec<GlossaryEntry>,
 
+    // ---- 划词翻译 ----
+    /// 选中消息里的文字时，在旁边显示「译」按钮
+    pub selection_translate: bool,
+
     // ---- 发送前翻译 ----
     /// 启用 Alt+Enter 翻译输入框内容
     pub composer_translate: bool,
@@ -98,6 +102,7 @@ impl Default for Config {
             channel_whitelist: Vec::new(),
             user_blacklist: Vec::new(),
             glossary: Vec::new(),
+            selection_translate: true,
             composer_translate: true,
             composer_auto_send: false,
             outgoing_lang: "en".into(),

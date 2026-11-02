@@ -24,13 +24,13 @@
 
 ![桌面应用](docs/desktop-app.png)
 
-**体积**：exe 4.68 MB，NSIS 安装包 1.95 MB。WebView2 运行时 Win10 1803+ 系统自带。
+**体积**：exe 5.05 MB，NSIS 安装包 2.07 MB。WebView2 运行时 Win10 1803+ 系统自带。
 
 **全程无控制台窗口**：exe 是 GUI 子系统（连 debug 构建也是），并且程序内部**不 spawn 任何控制台程序** —— 进程枚举、终止进程、发 WM_CLOSE、读写 .lnk 全部直接走 Win32 API，不再调 `tasklist` / `taskkill` / `powershell`。这些命令即使加了 `CREATE_NO_WINDOW`，在部分机器上也会闪一下黑窗。
 
 ### 安装
 
-运行 `desktop/src-tauri/target/release/bundle/nsis/DiscordTranslator_1.0.0_x64-setup.exe`。
+运行 `desktop/src-tauri/target/release/bundle/nsis/DiscordTranslator_1.1.0_x64-setup.exe`。
 
 per-user 安装到 `%LOCALAPPDATA%\Programs\DiscordTranslator`，不弹 UAC。
 
@@ -57,6 +57,15 @@ per-user 安装到 `%LOCALAPPDATA%\Programs\DiscordTranslator`，不弹 UAC。
 
 > 注意：`execCommand` 在**文档没有焦点**时会静默失败，所以必须 Discord 窗口是激活的。你按 Alt+Enter 时本来就在 Discord 里，所以正常场景没问题。
 
+### 划词翻译
+
+一条消息只翻了半句你想要的？直接**选中那几个词**，选区旁边会冒出一个蓝色「译」按钮，点它只翻这段，译文弹在选区下面，点空白处关掉。
+
+- 只在消息正文里出现，输入框、成员列表、频道列表都不会冒按钮
+- 用独立的 `bridge.translate` 单条请求，不会覆盖整条消息的译文，也不影响消息的翻译状态
+- 结果走同一套缓存，同一段文字点第二次是内存命中
+- 设置里可以整个关掉
+
 ### 本地翻译引擎（LibreTranslate / Ollama，一键引导部署）
 
 设置里有「本地翻译引擎」区块，两个按钮，点哪个都能把翻译搬到你自己机器上：不联网、不花钱、没有额度限制。
@@ -82,6 +91,17 @@ per-user 安装到 `%LOCALAPPDATA%\Programs\DiscordTranslator`，不弹 UAC。
 > 默认选 `qwen2.5:3b` 是因为它在 CPU 上也能跑到 10–20 tokens/s，翻译一条 20 字的消息约 2–3 秒。有独显的话可以把模型换成 `qwen2.5:7b`（约 4.7GB）质量更好。
 
 两个部署都在**后台线程**跑，界面每 1.5 秒轮询一次进度，显示当前阶段（拉镜像 / 启动服务 / 拉模型）而不会卡住窗口。
+
+#### 状态与卸载
+
+部署完不是黑盒：每个引擎都有一块独立面板，显示**已装什么、占多少磁盘**，也能删掉。
+
+| 引擎 | 状态显示 | 卸载做什么 | 不会做什么 |
+| --- | --- | --- | --- |
+| LibreTranslate | 运行中/已停止、语言包数量与语言列表（`en, zh`）、镜像体积 | `docker rm -f discord-translator-libre` + `docker rmi` 删镜像（约 1GB） | 不卸载 Docker Desktop，不动别的容器 |
+| Ollama | 运行中/已停止、每个模型的名称与体积 | `ollama rm <model>` 删模型文件（约 2GB） | 不卸载 Ollama 本体，不动别的模型 |
+
+Docker Desktop 装了但没启动时，面板显示「Docker 未运行」并禁用卸载按钮 —— 读不到容器状态不等于没装，这时报「未部署」会误导人。
 
 ### 术语表
 
@@ -141,10 +161,13 @@ CDP 的 WebSocket 有 Origin 校验，所以启动 Discord 时带 `--remote-allo
 | **当前频道一键白名单** | 自动读出当前频道名，一个按钮就能「只翻译这个频道 / 加入 / 移出白名单」，不用手抄频道 ID |
 | 翻译缓存 | SQLite 落盘，30 天 TTL，重启不重翻、不重烧 API |
 | 用量统计 | 今日请求次数 + 每日上限（超限停止并提示） |
-| 失败可见 | 先静默重试一次，仍失败才在消息下方红标「翻译失败：原因」+【重译】 |
+| 失败可见 | 先静默重试一次，仍失败才在消息下方红标「翻译失败：原因」+【重译】；本地模型把原文吐回来也按失败处理，不当成译文渲染 |
 | **翻译源健康度** | 诊断区显示各源实时连通性和耗时，一眼看出哪个挂了 |
 | **额度自动踢出** | 某个源额度耗尽时自动移出降级链并显示恢复倒计时，不白发请求 |
 | **本地引擎一键部署** | 引导式部署 LibreTranslate（Docker），或接本地 Ollama |
+| **本地引擎状态与卸载** | 显示已装语言包 / 已装模型及体积，可一键删容器、镜像或模型 |
+| **划词翻译** | 选中消息里任意一段文字，点旁边「译」单独翻译，不重译整条消息 |
+| **长消息自动分段** | 超过引擎安全长度的消息按段落/句子切开翻译再拼回，避免静默截断和超时 |
 | **发送前翻译** | Discord 输入框里按 `Alt + Enter`，把要说的话翻成目标语言填回输入框 |
 | 范围控制 | 频道白名单、忽略指定用户（作者名命中即跳过） |
 | 术语表 | `原文=译文`，翻译前用私有区字符占位、翻译后还原；支持导入/导出 txt |
@@ -170,6 +193,7 @@ CDP 的 WebSocket 有 Origin 校验，所以启动 Discord 时带 `--remote-allo
 | `glossary` | 术语表 `[{from, to}]` | `[]` |
 | `theme` | `system` / `dark` / `light` | `system` |
 | `channel` | `stable` / `ptb` / `canary` | `stable` |
+| `selectionTranslate` | 选中消息文字时显示「译」按钮 | `true` |
 | `composerTranslate` / `composerAutoSend` / `outgoingLang` | 发送前翻译 | `true` / `false` / `en` |
 
 ### 安全性
@@ -270,6 +294,7 @@ dom.js  在 message-content 后面插入 <div class="dt-trans">
 几个关键设计：
 
 - **语种分组**：腾讯接口的自动检测只认批次第一条的语言，混合语言整批发过去会把韩语翻成乱码。先用 Unicode 字符区间本地分组，再按组批量。
+- **长文本分段**：实测腾讯超过约 1800 字会**静默截断**（3500 字只回 540 字译文），本地 `qwen2.5:3b` 在 CPU 上超过 3000 字直接超时。所以按引擎给不同安全长度（腾讯/Google 1500、Libre/OpenAI 兼容 1200），先按空行切段、再按句子切、实在不行硬切，分段翻完用空行拼回去；任一段失败就报失败，不给半截译文。
 - **虚拟列表兼容**：Discord 的消息 `li` 会被 React 复用，每条译文都记着 `data-dt-for`（消息 ID）和 `data-dt-src`（原文），`li` 换消息或消息被编辑时自动重译。
 - **CSP**：三个宿主各自绕开 —— 扩展走 background service worker，BD 走 `BdApi.Net.fetch`，桌面应用走 Rust 的 `reqwest`。
 
@@ -321,6 +346,8 @@ discord-translator/
 │           ├── http.rs             # HTTP 代理（绕 CORS）
 │           ├── store.rs            # SQLite 缓存 + 用量
 │           ├── shortcut.rs         # 快捷方式接管/还原
+│           ├── local_engine.rs     # 本地引擎引导部署
+│           ├── uninstall.rs        # 本地引擎状态查询与卸载
 │           └── logging.rs
 ├── extension/                      # 浏览器扩展
 │   └── src/core/                   # engine.js / dom.js / settings.js（单一真源）
@@ -353,3 +380,7 @@ node test/engine.test.js
 `build-desktop.ps1` 会把 `extension/src/core/{engine,dom}.js` 与 `content.css` 同步到 `desktop/src/`，保证三种形态用同一份代码。
 
 调试桌面应用：用 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9555` 启动，就能用 CDP 检查前端状态。
+
+### 自动构建
+
+`.github/workflows/build.yml`：push `v*` tag 时在 `windows-latest` 上出一份 exe + NSIS 安装包，并直接以 tag 建 Release（正文取 `RELEASE_NOTES.md`）。手动 `workflow_dispatch` 只上传 artifact，不发版。

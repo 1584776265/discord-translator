@@ -176,6 +176,7 @@
     node.setAttribute('data-dt-lang', result.detected || '');
     node.setAttribute('data-dt-target', settings.targetLang || '');
     node.classList.remove(NS + '-trans--error');
+    node.classList.remove(NS + '-pending');
 
     const badge = node.querySelector('.' + NS + '-badge');
     const textEl = node.querySelector('.' + NS + '-text');
@@ -212,6 +213,24 @@
     for (let i = 0; i < nodes.length; i++) nodes[i].remove();
     removeError(li);
     restoreOrigins(li);
+  }
+
+  /** 重译期间的占位：复用译文节点，先写上"翻译中…" */
+  function renderLoading(item) {
+    const { li, contentEl, key } = item;
+    if (!li.isConnected || !contentEl || !contentEl.isConnected) return;
+
+    let node = li.querySelector(':scope > .' + NS + '-trans');
+    if (!node) {
+      node = buildNode();
+      contentEl.insertAdjacentElement('afterend', node);
+    }
+
+    node.setAttribute('data-dt-for', key);
+    node.classList.add(NS + '-pending');
+
+    const txt = node.querySelector('.' + NS + '-text');
+    if (txt) txt.textContent = '翻译中…';
   }
 
   function shortMsg(s) {
@@ -260,8 +279,13 @@
     retry.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
+
+      // 立即给反馈：失败标记换成"翻译中…"，
+      // 否则用户点完要盯着原来的红字等好几秒，会以为按钮没反应
       removeError(li);
       skipped.delete(key);
+      inFlight.delete(key);
+      renderLoading({ li, contentEl, key, srcText });
       enqueue({ li, contentEl, key, srcText });
     });
 
@@ -557,11 +581,11 @@
       const r = records[i];
       if (isOurMutation(r)) continue;
       if (r.type === 'characterData') {
-        scheduleScan(260);
+        scheduleScan(150);
         return;
       }
       if (r.type === 'childList' && (r.addedNodes.length || r.removedNodes.length)) {
-        scheduleScan(160);
+        scheduleScan(90);
         return;
       }
     }
@@ -577,6 +601,8 @@
     settings = options.getSettings() || {};
     running = true;
     document.addEventListener('keydown', onComposerKeyDown, true);
+    document.addEventListener('selectionchange', onSelectionChange);
+    document.addEventListener('mousedown', onDocMouseDown, true);
 
     observer = new MutationObserver(onMutations);
     observer.observe(document.body, {
@@ -587,15 +613,15 @@
 
     // 首次与后续补扫
     scheduleScan(300);
-    const t1 = setTimeout(scanAll, 1500);
-    const t2 = setTimeout(scanAll, 4000);
+    const t1 = setTimeout(scanAll, 400);
+    const t2 = setTimeout(scanAll, 2000);
 
     // 滚动时补扫
     window.addEventListener('scroll', onScroll, true);
 
     if (root.DTEngine) {
       // 预热：把已渲染消息先翻一遍
-      scheduleScan(800);
+      scheduleScan(200);
     }
 
     return () => {
@@ -624,6 +650,22 @@
     flushTimer = null;
     window.removeEventListener('scroll', onScroll, true);
     document.removeEventListener('keydown', onComposerKeyDown, true);
+    document.removeEventListener('selectionchange', onSelectionChange);
+    document.removeEventListener('mousedown', onDocMouseDown, true);
+    if (selTimer) {
+      clearTimeout(selTimer);
+      selTimer = null;
+    }
+
+    if (selBtn) {
+      selBtn.remove();
+      selBtn = null;
+    }
+    if (selPop) {
+      selPop.remove();
+      selPop = null;
+    }
+
     const toast = document.getElementById(NS + '-toast');
     if (toast) toast.remove();
     removeAllNodes();
@@ -655,6 +697,8 @@
 
   function retranslateAll() {
     removeAllNodes();
+    hideSelPop();
+    hideSelBtn();
     scanAll();
   }
 
@@ -667,6 +711,146 @@
       inFlightKeys: Array.from(inFlight),
       running
     };
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* 划词翻译                                                          */
+  /* ---------------------------------------------------------------- */
+
+  let selBtn = null;
+  let selPop = null;
+  let selTimer = null;
+  let selRect = null;
+
+  function ensureSelBtn() {
+    if (selBtn && selBtn.isConnected) return selBtn;
+
+    selBtn = document.createElement('button');
+    selBtn.className = NS + '-selbtn';
+    selBtn.type = 'button';
+    selBtn.textContent = '译';
+    selBtn.title = '翻译选中的文字';
+    selBtn.addEventListener('mousedown', onSelBtnClick);
+    document.body.appendChild(selBtn);
+
+    return selBtn;
+  }
+
+  function hideSelBtn() {
+    if (selBtn) selBtn.classList.remove('show');
+  }
+
+  function hideSelPop() {
+    if (selPop) selPop.classList.remove('show');
+  }
+
+  function showSelPop(text, isError) {
+    if (!selPop || !selPop.isConnected) {
+      selPop = document.createElement('div');
+      selPop.className = NS + '-selpop';
+      document.body.appendChild(selPop);
+    }
+
+    selPop.textContent = text;
+    selPop.classList.toggle(NS + '-selpop--err', !!isError);
+    selPop.classList.add('show');
+
+    const rect = selRect || { left: 40, top: 120, bottom: 140, right: 200 };
+    const maxW = Math.min(460, window.innerWidth - 32);
+    selPop.style.maxWidth = maxW + 'px';
+
+    let left = rect.left;
+    let top = rect.bottom + 10;
+
+    if (left + maxW > window.innerWidth - 16) left = window.innerWidth - maxW - 16;
+    if (left < 16) left = 16;
+
+    // 下方放不下就翻到选区上方
+    const estimated = Math.min(240, 24 + Math.ceil(text.length / 40) * 20);
+    if (top + estimated > window.innerHeight - 16) {
+      top = Math.max(16, rect.top - estimated - 10);
+    }
+
+    selPop.style.left = left + 'px';
+    selPop.style.top = top + 'px';
+  }
+
+  async function onSelBtnClick(e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const sel = window.getSelection();
+    const text = String(sel || '').toString().trim();
+    if (!text) {
+      hideSelBtn();
+      return;
+    }
+
+    selRect = sel.rangeCount ? sel.getRangeAt(0).getBoundingClientRect() : selRect;
+    hideSelBtn();
+    showSelPop('翻译中…', false);
+
+    try {
+      const out = await bridge.translate([text], Object.assign({}, settings));
+      const r = out && out[0];
+
+      if (r && r.ok && r.text) {
+        showSelPop(r.text, false);
+      } else {
+        showSelPop('翻译失败：' + ((r && r.error) || '无结果'), true);
+      }
+    } catch (err) {
+      showSelPop('翻译失败：' + ((err && err.message) || err), true);
+    }
+  }
+
+  function onDocMouseDown(e) {
+    if (selPop && selPop.classList.contains('show') && !selPop.contains(e.target)) {
+      hideSelPop();
+    }
+  }
+
+  function onSelectionChange() {
+    if (!running) return;
+    if (settings.selectionTranslate === false) return;
+
+    clearTimeout(selTimer);
+    selTimer = setTimeout(() => {
+      const sel = window.getSelection();
+      const text = String(sel || '').toString().trim();
+
+      if (!text || text.length < 2) {
+        hideSelBtn();
+        return;
+      }
+
+      const node = sel.anchorNode;
+      const el = node ? (node.nodeType === 1 ? node : node.parentElement) : null;
+
+      // 只在消息正文里给按钮，别在输入框、成员列表里乱冒
+      if (!el || !el.closest('[id^="message-content-"]')) {
+        hideSelBtn();
+        return;
+      }
+
+      if (!sel.rangeCount) {
+        hideSelBtn();
+        return;
+      }
+
+      const rect = sel.getRangeAt(0).getBoundingClientRect();
+      if (!rect || rect.width === 0) {
+        hideSelBtn();
+        return;
+      }
+
+      selRect = { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
+
+      const btn = ensureSelBtn();
+      btn.classList.add('show');
+      btn.style.left = Math.round(rect.right - 10) + 'px';
+      btn.style.top = Math.round(rect.top - 12) + 'px';
+    }, 220);
   }
 
   /* ---------------------------------------------------------------- */

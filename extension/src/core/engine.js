@@ -759,15 +759,53 @@
     });
   }
 
+  /**
+   * 按「条数 + 总字符数」双重上限分批。
+   *
+   * 只用条数分批会翻车：24 条短消息塞一批完全没问题（省往返），
+   * 但 3 条 1200 字的长文塞一起，本地 3B 模型就要生成几千 token，等到超时。
+   */
+  function packBatches(texts, maxItems, maxChars) {
+    const batches = [];
+    let cur = [];
+    let chars = 0;
+
+    for (let i = 0; i < texts.length; i++) {
+      const len = String(texts[i] || '').length;
+
+      if (cur.length > 0 && (cur.length >= maxItems || chars + len > maxChars)) {
+        batches.push(cur);
+        cur = [];
+        chars = 0;
+      }
+
+      cur.push(i);
+      chars += len;
+    }
+
+    if (cur.length > 0) batches.push(cur);
+    return batches;
+  }
+
   async function openaiTranslate(texts, s) {
     const results = new Array(texts.length);
-    for (const part of chunkArray(
-      texts.map((t, i) => i),
-      25
-    )) {
+
+    // LLM 生成比 API 慢一个数量级：本地 3B 在 CPU 上吐 1000 字要一两分钟。
+    const isLocal = /127\.0\.0\.1|localhost/.test(String(s.openaiBase || ''));
+
+    const maxItems = isLocal ? 16 : 40;
+    const maxChars = isLocal ? 1600 : 6000;
+
+    const timeout = isLocal
+      ? Math.max(s.timeout || 0, 240000)
+      : Math.max(s.timeout || 0, 90000);
+
+    const settings = Object.assign({}, s, { timeout });
+
+    for (const part of packBatches(texts, maxItems, maxChars)) {
       const payload = part.map((i) => texts[i]);
       try {
-        const r = await withRetry(() => openaiTranslateBatch(payload, s), s.retries || 2);
+        const r = await withRetry(() => openaiTranslateBatch(payload, settings), s.retries || 1);
         part.forEach((originalIndex, k) => {
           results[originalIndex] = r[k];
         });
@@ -980,6 +1018,83 @@
   /* 对外 API                                                            */
   /* ================================================================== */
 
+  /**
+   * 各引擎单条能安全处理的字符数。
+   * 实测：腾讯超过约 1800 字后会被静默截断（3500 字只返回 540 字译文），
+   * Ollama qwen2.5:3b 在 CPU 上超过 3000 字直接超时。
+   */
+  const LONG_TEXT_LIMIT = {
+    tencent: 1500,
+    google: 1500,
+    mymemory: 1500,
+    caiyun: 1500,
+    libre: 1200,
+    openai: 1200
+  };
+
+  /**
+   * 把长文本切成若干段：优先按段落，其次按句子，实在不行硬切。
+   * 切完分段翻译再拼回去，避免截断丢内容和超时。
+   */
+  function splitLongText(text, maxChars) {
+    const t = String(text || '');
+    if (t.length <= maxChars) return [t];
+
+    const parts = [];
+    let buf = '';
+
+    const push = () => {
+      const v = buf.trim();
+      if (v) parts.push(v);
+      buf = '';
+    };
+
+    for (const block of t.split(/\n{2,}/)) {
+      if (block.length <= maxChars) {
+        if (buf.length + block.length + 2 > maxChars) push();
+        buf += (buf ? '\n\n' : '') + block;
+        continue;
+      }
+
+      // 单段超长，按句子切
+      const sentences = block.match(/[^.!?。！？\n]+[.!?。！？]*\s*/g) || [block];
+
+      for (const sent of sentences) {
+        if (sent.length > maxChars) {
+          push();
+          let rest = sent;
+          while (rest.length > maxChars) {
+            parts.push(rest.slice(0, maxChars));
+            rest = rest.slice(maxChars);
+          }
+          if (rest.trim()) buf = rest;
+          continue;
+        }
+        if (buf.length + sent.length > maxChars) push();
+        buf += sent;
+      }
+    }
+
+    push();
+    return parts.length ? parts : [t.slice(0, maxChars)];
+  }
+
+  /**
+   * 目标语言是中日韩，译文却一个 CJK 字符都没有 —— 认为模型把原文吐回来了。
+   * 纯表情/纯符号的原文不算，太短的不算（"GG" 这种本来就不翻）。
+   */
+  const CJK_TARGET = /^(zh|ja|ko)/i;
+  const CJK_CHAR = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uf900-\ufaff]/;
+
+  function looksEchoed(src, out, targetLang) {
+    if (!CJK_TARGET.test(String(targetLang || ''))) return false;
+    if (!out) return false;
+    if (CJK_CHAR.test(out)) return false;
+
+    const letters = String(src || '').replace(/[^\p{L}]/gu, '');
+    return letters.length >= 12;
+  }
+
   async function translate(texts, settings) {
     const s = settings || {};
     if (!Array.isArray(texts) || texts.length === 0) return [];
@@ -1001,21 +1116,70 @@
 
     if (todo.length === 0) return results;
 
-    const todoTexts = todo.map((i) => texts[i]);
     const provider = s.provider || 'auto';
+    const maxChars = LONG_TEXT_LIMIT[provider] || 1500;
+
+    // ---- 长文本拆段 ----
+    const segments = [];
+    for (const i of todo) {
+      const parts = splitLongText(texts[i], maxChars);
+      for (const p of parts) segments.push({ src: i, text: p });
+    }
+
+    const segTexts = segments.map((x) => x.text);
 
     let out;
     if (provider === 'auto') {
-      out = await autoTranslate(todoTexts, s);
+      out = await autoTranslate(segTexts, s);
     } else {
-      out = await runProvider(provider, todoTexts, s);
+      out = await runProvider(provider, segTexts, s);
     }
 
-    todo.forEach((originalIndex, k) => {
-      const r = out[k] || { ok: false, error: '无结果' };
-      results[originalIndex] = r;
-      if (r.ok && r.text) cacheSet(texts[originalIndex], s, r);
+    // ---- 按原文合并 ----
+    const grouped = new Map();
+    segments.forEach((seg, k) => {
+      if (!grouped.has(seg.src)) grouped.set(seg.src, []);
+      grouped.get(seg.src).push(out[k] || { ok: false, error: '无结果' });
     });
+
+    for (const i of todo) {
+      const parts = grouped.get(i) || [];
+
+      if (parts.length === 0) {
+        results[i] = { ok: false, error: '无结果' };
+        continue;
+      }
+
+      const allOk = parts.every((r) => r && r.ok);
+
+      if (allOk) {
+        const joined = parts
+          .map((r) => r.text)
+          .filter(Boolean)
+          .join('\n\n');
+
+        // 本地小模型偶尔会把原文吐回来（内容高度重复 / 超出上下文时尤其明显），
+        // 这种结果一旦渲染出去，用户会以为译文就是英文。宁可报失败让人点重译。
+        if (looksEchoed(texts[i], joined, s.targetLang)) {
+          results[i] = { ok: false, error: '模型没有翻译，返回了原文' };
+          continue;
+        }
+
+        results[i] = {
+          ok: true,
+          text: joined,
+          detected: (parts[0] && parts[0].detected) || ''
+        };
+        if (joined) cacheSet(texts[i], s, results[i]);
+      } else {
+        const bad = parts.find((r) => r && !r.ok);
+        results[i] = {
+          ok: false,
+          error: (bad && bad.error) || '部分分段翻译失败',
+          partial: parts.length > 1
+        };
+      }
+    }
 
     return results;
   }

@@ -631,3 +631,60 @@ html[data-theme='light'] ::-webkit-scrollbar-thumb {
 html[data-theme='light'] ::-webkit-scrollbar-thumb:hover {
   background: #aeb4bc;
 }
+/* ---- 本地引擎分组 ---- */
+
+.engine-block {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 11px 12px 12px;
+  margin-bottom: 9px;
+  background: var(--card-2);
+}
+
+.engine-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.engine-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.engine-meta {
+  font-size: 11px;
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+
+.engine-desc {
+  margin: 0 0 9px;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.engine-actions {
+  display: flex;
+  gap: 7px;
+}
+
+.engine-actions .btn {
+  min-width: 0;
+}
+
+.engine-actions .btn.grow {
+  flex: 1 1 auto;
+}
+
+.engine-actions .btn.danger {
+  flex: 0 0 auto;
+}
+
+html[data-theme='light'] .engine-block {
+  background: #fafbfc;
+}

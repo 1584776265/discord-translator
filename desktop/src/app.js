@@ -205,6 +205,7 @@
       userBlacklist: c.userBlacklist || [],
       // LLM 走提示词注入术语，不用占位符那套
       glossary: c.glossary || [],
+      selectionTranslate: c.selectionTranslate !== false,
       composerTranslate: c.composerTranslate !== false,
       composerAutoSend: !!c.composerAutoSend,
       outgoingLang: c.outgoingLang || 'en'
@@ -1025,6 +1026,75 @@
     }
   }
 
+  async function refreshLibreDetail(running) {
+    const el = $('libreDetail');
+    const meta = $('libreMeta');
+
+    try {
+      const info = await invoke('libre_info');
+
+      // Docker daemon 没起来时读不到容器，这跟「没装」是两回事
+      if (!info.dockerRunning) {
+        meta.textContent = 'Docker 未运行';
+        el.textContent =
+          'Docker Desktop 没有运行，读不到容器状态。启动 Docker 后这里会显示已装的语言包。';
+        $('btnUninstallLibre').disabled = true;
+        return;
+      }
+
+      $('btnUninstallLibre').disabled = false;
+
+      if (!info.installed) {
+        meta.textContent = '未部署';
+        el.textContent = '还没有部署。点下面的按钮会自动拉镜像、起容器并填好地址。';
+        $('btnDeployLibre').textContent = '部署 LibreTranslate';
+        return;
+      }
+
+      const langs = (info.languages || []).join(', ') || '未知';
+      meta.textContent = running ? '运行中' : '已停止';
+      el.textContent =
+        `${info.models} 个语言包（${langs}）` +
+        (info.imageSize ? ` · 镜像 ${info.imageSize}` : '');
+    } catch (e) {
+      meta.textContent = '读取失败';
+      el.textContent = String((e && e.message) || e);
+    }
+  }
+
+  async function refreshOllamaDetail(running) {
+    const el = $('ollamaDetail');
+    const meta = $('ollamaMeta');
+
+    try {
+      const info = await invoke('ollama_info');
+
+      if (!info.installed) {
+        meta.textContent = '未安装';
+        el.textContent = '还没有安装。点下面的按钮会用 winget 自动安装并下载 qwen2.5:3b（约 2GB）。';
+        return;
+      }
+
+      const models = info.models || [];
+
+      if (!models.length) {
+        meta.textContent = '无模型';
+        el.textContent = 'Ollama 已安装，但没有已下载的模型。点下面的按钮下载 qwen2.5:3b（约 2GB）。';
+        $('btnUninstallOllama').disabled = true;
+        return;
+      }
+
+      $('btnUninstallOllama').disabled = false;
+      meta.textContent = running ? '运行中' : '已停止';
+
+      const list = models.map((m) => `${m.name}（${m.size}）`).join('、');
+      el.textContent = `已装模型：${list}`;
+    } catch (e) {
+      meta.textContent = '读取失败';
+      el.textContent = String((e && e.message) || e);
+    }
+  }
+
   async function refreshShortcut() {
     try {
       const s = await invoke('shortcut_info');
@@ -1104,6 +1174,10 @@
       if (e.ollamaRunning) {
         $('btnDeployOllama').textContent = '已部署（重新部署）';
       }
+
+      // 各自引擎的详细信息：已装语言 / 已装模型
+      refreshLibreDetail(e.libreRunning);
+      refreshOllamaDetail(e.ollamaRunning);
     } catch (err) {
       $('eDocker').textContent = '检测失败';
       log('ERROR', '检测本地引擎失败: ' + ((err && err.message) || err));
@@ -1319,6 +1393,74 @@
 
     $('btnRefreshEnv').addEventListener('click', refreshLocalEnv);
 
+    $('btnUninstallLibre').addEventListener('click', async () => {
+      const ok = confirm(
+        '卸载 LibreTranslate？\n\n' +
+          '会删除容器和镜像（约 1GB 磁盘）。\n' +
+          'Docker Desktop 本体不会被卸载，其他容器也不受影响。'
+      );
+      if (!ok) return;
+
+      setHint('正在卸载 LibreTranslate…');
+      try {
+        const msg = await invoke('uninstall_libre', { removeImage: true });
+        setHint(msg);
+        log('INFO', msg);
+        await refreshLocalEnv();
+      } catch (e) {
+        setHint('卸载失败：' + ((e && e.message) || e), true);
+        log('ERROR', '卸载 LibreTranslate 失败: ' + ((e && e.message) || e));
+      }
+    });
+
+    $('btnUninstallOllama').addEventListener('click', async () => {
+      let info;
+      try {
+        info = await invoke('ollama_info');
+      } catch (e) {
+        setHint('读取 Ollama 信息失败：' + ((e && e.message) || e), true);
+        return;
+      }
+
+      const models = (info && info.models) || [];
+      if (!models.length) {
+        setHint('没有可删除的 Ollama 模型。');
+        return;
+      }
+
+      // 优先删当前正在用的那个
+      const wanted = (S.cfg && S.cfg.openaiModel) || '';
+      const target = models.find((m) => m.name === wanted) || models[0];
+
+      const ok = confirm(
+        `删除模型 ${target.name}（${target.size}）？\n\n` +
+          '只删除模型文件，Ollama 程序本身保留。\n' +
+          '删掉后【部署 Ollama】需要重新下载约 2GB。'
+      );
+      if (!ok) return;
+
+      const inUse =
+        (S.cfg.provider || '') === 'openai' && (S.cfg.openaiModel || '') === target.name;
+
+      setHint('正在删除模型…');
+      try {
+        const msg = await invoke('uninstall_ollama_model', { model: target.name });
+        log('INFO', msg);
+
+        // 删掉的正是当前在用的模型：不切走的话接下来每条都会失败
+        if (inUse) {
+          await saveCfg({ provider: 'auto' });
+          setHint(msg + '。当前翻译源已切回「自动」。');
+        } else {
+          setHint(msg);
+        }
+
+        await refreshLocalEnv();
+      } catch (e) {
+        setHint('删除失败：' + ((e && e.message) || e), true);
+      }
+    });
+
     $('btnDeployOllama').addEventListener('click', async () => {
       const btn = $('btnDeployOllama');
       btn.disabled = true;
@@ -1425,6 +1567,9 @@
       }
     });
 
+    $('selectionTranslate').addEventListener('change', (e) =>
+      saveCfg({ selectionTranslate: e.target.checked })
+    );
     $('composerTranslate').addEventListener('change', (e) =>
       saveCfg({ composerTranslate: e.target.checked })
     );
@@ -1517,6 +1662,7 @@
     $('whitelist').value = (c.channelWhitelist || []).join('\n');
     $('userBlacklist').value = (c.userBlacklist || []).join('\n');
     $('glossary').value = (c.glossary || []).map((g) => `${g.from}=${g.to}`).join('\n');
+    $('selectionTranslate').checked = c.selectionTranslate !== false;
     $('composerTranslate').checked = c.composerTranslate !== false;
     $('composerAutoSend').checked = !!c.composerAutoSend;
     $('outgoingLang').value = c.outgoingLang || 'en';

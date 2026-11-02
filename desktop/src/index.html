@@ -146,9 +146,31 @@
         <span>Ollama</span><b id="eOllama">检测中…</b>
       </div>
 
+      <div class="engine-block">
+        <div class="engine-head">
+          <span class="engine-name">LibreTranslate</span>
+          <span class="engine-meta" id="libreMeta">—</span>
+        </div>
+        <p class="engine-desc" id="libreDetail">—</p>
+        <div class="engine-actions">
+          <button id="btnDeployLibre" class="btn small grow">部署 LibreTranslate</button>
+          <button id="btnUninstallLibre" class="btn small danger">卸载</button>
+        </div>
+      </div>
+
+      <div class="engine-block">
+        <div class="engine-head">
+          <span class="engine-name">Ollama</span>
+          <span class="engine-meta" id="ollamaMeta">—</span>
+        </div>
+        <p class="engine-desc" id="ollamaDetail">—</p>
+        <div class="engine-actions">
+          <button id="btnDeployOllama" class="btn small grow">部署 Ollama</button>
+          <button id="btnUninstallOllama" class="btn small danger">卸载模型</button>
+        </div>
+      </div>
+
       <div class="actions">
-        <button id="btnDeployLibre" class="btn small">部署 LibreTranslate</button>
-        <button id="btnDeployOllama" class="btn small">部署 Ollama</button>
         <button id="btnRefreshEnv" class="btn small">重新检测</button>
       </div>
 
@@ -175,6 +197,17 @@
           </select>
         </div>
       </div>
+    </section>
+
+    <section class="card">
+      <h2>划词翻译</h2>
+      <p class="note">
+        在消息里选中一段文字，旁边会冒出一个「译」按钮，点它单独翻这段，不影响整条消息的译文。
+      </p>
+      <label class="check">
+        <input type="checkbox" id="selectionTranslate" />
+        <span>选中消息文字时显示「译」按钮</span>
+      </label>
     </section>
 
     <section class="card">

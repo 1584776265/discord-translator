@@ -156,7 +156,7 @@ fn run_quiet(program: &str, args: &[&str]) -> Option<String> {
 
 /// 找 docker 可执行文件。
 /// Docker Desktop 4.30+ 默认 per-user 安装，CLI 不在 Program Files 也不一定在 PATH 里。
-fn find_docker() -> Option<String> {
+pub fn find_docker() -> Option<String> {
     if run_quiet("docker", &["--version"]).is_some() {
         return Some("docker".to_string());
     }
@@ -498,7 +498,7 @@ fn dir_size(path: &std::path::Path) -> u64 {
 }
 
 /// 找 ollama 可执行文件：先看 PATH，再看默认安装目录
-fn find_ollama() -> Option<std::path::PathBuf> {
+pub fn find_ollama() -> Option<std::path::PathBuf> {
     if run_quiet("ollama", &["--version"]).is_some() {
         return Some(std::path::PathBuf::from("ollama"));
     }

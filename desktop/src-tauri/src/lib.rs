@@ -5,6 +5,7 @@ mod local_engine;
 mod logging;
 mod shortcut;
 mod store;
+mod uninstall;
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -108,6 +109,59 @@ fn local_engine_deploy_ollama() -> Result<(), String> {
 #[tauri::command]
 fn local_engine_state() -> local_engine::DeployState {
     local_engine::state()
+}
+
+/* ------------------------------------------------------------------ */
+/* 命令：本地引擎的详细信息与卸载                                      */
+/* ------------------------------------------------------------------ */
+
+#[tauri::command]
+async fn libre_info() -> serde_json::Value {
+    let info = tauri::async_runtime::spawn_blocking(uninstall::libre_info)
+        .await
+        .unwrap_or_else(|_| uninstall::libre_info());
+
+    serde_json::json!({
+        "installed": info.installed,
+        "running": info.running,
+        "dockerRunning": info.docker_running,
+        "imageSize": info.image_size,
+        "languages": info.languages,
+        "models": info.models,
+    })
+}
+
+#[tauri::command]
+async fn ollama_info() -> serde_json::Value {
+    let info = tauri::async_runtime::spawn_blocking(uninstall::ollama_info)
+        .await
+        .unwrap_or_else(|_| uninstall::ollama_info());
+
+    let models: Vec<serde_json::Value> = info
+        .models
+        .iter()
+        .map(|(n, s)| serde_json::json!({ "name": n, "size": s }))
+        .collect();
+
+    serde_json::json!({
+        "installed": info.installed,
+        "running": info.running,
+        "models": models,
+    })
+}
+
+#[tauri::command]
+async fn uninstall_libre(remove_image: bool) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || uninstall::uninstall_libre(remove_image))
+        .await
+        .map_err(|e| format!("卸载任务失败: {}", e))?
+}
+
+#[tauri::command]
+async fn uninstall_ollama_model(model: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || uninstall::uninstall_ollama_model(&model))
+        .await
+        .map_err(|e| format!("卸载任务失败: {}", e))?
 }
 
 #[tauri::command]
@@ -482,6 +536,10 @@ pub fn run() {
             local_engine_deploy,
             local_engine_deploy_ollama,
             local_engine_state,
+            libre_info,
+            ollama_info,
+            uninstall_libre,
+            uninstall_ollama_model,
             cache_get,
             cache_put,
             cache_stats,
